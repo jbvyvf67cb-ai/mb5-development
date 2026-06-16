@@ -22,6 +22,19 @@ installDebug({ engine, scene, state });
 // in edit mode on a demo continent (until authored levels are loaded).
 const app = new App(scene, state, makeDemoContinent());
 
+// Optional: ?level=<url> loads an authored/converted continent at boot
+// (e.g. ?level=./continents/foo.json). Useful for hand-drawn → JSON imports.
+const levelUrl = new URLSearchParams(location.search).get("level");
+if (levelUrl) {
+  try {
+    const res = await fetch(levelUrl);
+    if (res.ok) app.loadContinent(await res.json());
+    else console.warn(`[boot] level fetch failed: ${res.status} ${levelUrl}`);
+  } catch (err) {
+    console.warn("[boot] level load error", err);
+  }
+}
+
 addEventListener("resize", () => engine.resize());
 engine.runRenderLoop(() => scene.render());
 

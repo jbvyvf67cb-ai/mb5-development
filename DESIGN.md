@@ -45,13 +45,26 @@ format; and round-trip with the runtime world loader.
   palette, heightmap sculpt brushes, entity placement, undo/redo, save/load.
 
 **Milestones:**
-1. World runtime foundation — schema + prefab library + heightmap terrain +
-   physics loader + demo continent. *(in progress)*
-2. Generic `Buf`/chunk/cull batching for continent scale.
-3. Editor shell — free-fly cam, pick/select, transform gizmos, prefab
-   palette, place/delete.
-4. Heightmap sculpt brushes (raise/lower/smooth/flatten).
-5. Entity placement + save/load JSON + load authored continents into the game.
+1. ✅ World runtime foundation — schema + prefab library + heightmap terrain +
+   physics loader + demo continent.
+2. ⏳ Generic `Buf`/chunk/cull batching for continent scale. *(Buf done; chunk
+   registry + distance culling still to wire — currently one mesh+collider per
+   prefab, fine until levels get large.)*
+3. ✅ Editor shell — orbit cam, raycast pick/select, transform gizmos
+   (move/rotate/scale), prefab palette, place/delete.
+4. ✅ Heightmap sculpt brushes (raise/lower/smooth/flatten, radius/strength).
+5. ✅ Entity placement + save/load JSON (download/upload) + `?level=` URL load
+   + `App.loadContinent()`.
+
+**Also shipped:** a **Play mode** (Tab) — walk the level with a capsule
+controller (velocity-write movement, coyote/buffer jump, ray ground check),
+follow camera, and kill-plane respawn. Format documented in
+`docs/MAP-FORMAT.md` (incl. the hand-drawn → JSON conversion flow).
+
+**Next candidates:** chunk/cull batching (M2); per-instance numeric transform
+fields + grid snap + undo/redo in the editor; richer prefabs (stairs, slopes,
+moving platforms) and glTF prefab support; wiring entities to gameplay; the
+hand-drawn-map → `ContinentData` importer (Claude-assisted).
 
 ---
 
