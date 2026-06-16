@@ -12,6 +12,8 @@ import { Editor } from "./editor/editor";
 import { EditorUI } from "./editor/ui";
 import { Input } from "./core/input";
 import { PlayerController } from "./player/controller";
+import { Hud } from "./ui/hud";
+import { PlaySession } from "./game/play";
 
 export type Mode = "edit" | "play";
 
@@ -21,8 +23,10 @@ export class App {
   mode: Mode = "edit";
 
   private ui: EditorUI;
+  private hud: Hud;
   private input = new Input();
   private player?: PlayerController;
+  private session?: PlaySession;
   private camera: ArcRotateCamera;
 
   constructor(
@@ -44,6 +48,7 @@ export class App {
       togglePlay: () => self.toggleMode(),
       isPlaying: () => self.mode === "play",
     });
+    this.hud = new Hud(state);
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
     this.editor.onHistoryChange = () => this.ui.updateHistory();
     this.editor.enable();
@@ -113,10 +118,16 @@ export class App {
       this.input.poll();
       const camYaw = -this.camera.alpha - Math.PI / 2;
       this.player.update(dt, this.input.state, camYaw);
-      // follow: translate the orbit pivot, preserving the user's alpha/beta/radius
+
+      // Chase camera: lazily swing behind the player's heading.
+      const desired = -this.player.facing - Math.PI / 2;
+      let d = desired - this.camera.alpha;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      this.camera.alpha += d * Math.min(1, dt * 3);
       this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, 1, 0);
-      const killY = this.world.data.meta.killPlaneY ?? -40;
-      if (this.player.position.y < killY) this.player.teleport(spawnPoint(this.world.data));
+
+      this.session?.update(dt);
       this.input.consume();
     }
   }
@@ -132,10 +143,15 @@ export class App {
     this.ui.setMode(true);
     this.player = new PlayerController(this.scene, spawnPoint(this.world.data));
     this.input.attach();
+    this.session = new PlaySession(this.scene, this.world, this.state, this.player);
+    this.hud.show();
     this.camera.target.copyFrom(this.player.position);
     this.camera.radius = 14;
     this.camera.beta = 1.1;
-    (window as unknown as Record<string, unknown>).__player = this.player;
+    const player = this.player;
+    const w = window as unknown as Record<string, unknown>;
+    w.__player = player;
+    w.__tpPlayer = (x: number, y: number, z: number) => player.teleport(new Vector3(x, y, z));
     this.state.setPhase("playing");
     this.state.emit("player:spawn", {
       x: this.player.position.x,
@@ -147,6 +163,9 @@ export class App {
   private exitPlay() {
     this.mode = "edit";
     this.input.detach();
+    this.session?.dispose();
+    this.session = undefined;
+    this.hud.hide();
     this.player?.dispose();
     this.player = undefined;
     (window as unknown as Record<string, unknown>).__player = undefined;

@@ -230,7 +230,8 @@ export class EditorUI {
   setMode(playing: boolean) {
     this.playBtn.textContent = playing ? "■ Edit" : "▶ Play";
     this.playBtn.style.background = playing ? "#a33" : "#2a6";
-    for (const key of ["gizmo", "place", "entity", "sculpt"]) this.sections[key].style.display = "none";
+    // Collapse the whole editor panel while playing; Tab (or the HUD hint) exits.
+    this.root.style.display = playing ? "none" : "block";
     if (!playing) this.setTool(this.host.editor.tool);
   }
 

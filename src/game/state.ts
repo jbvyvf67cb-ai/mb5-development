@@ -69,4 +69,17 @@ export class GameState {
     this.phase = p;
     this.emit("phase", p);
   }
+
+  addCoins(n = 1): void {
+    this.coins += n;
+    this.emit("coins", this.coins);
+  }
+
+  /** Reset per-run counters (called when entering Play mode). */
+  resetRun(): void {
+    this.coins = 0;
+    this.health = this.maxHealth;
+    this.emit("coins", this.coins);
+    this.emit("player:health", this.health);
+  }
 }

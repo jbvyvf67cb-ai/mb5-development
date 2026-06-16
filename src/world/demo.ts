@@ -43,6 +43,14 @@ export function makeDemoContinent(): ContinentData {
     place("ball", [0, 18, 0], [2, 2, 2]), // drops onto the first platform = physics smoke test
   ];
 
-  c.entities = [{ id: "spawn", type: "playerSpawn", pos: [0, 6, 6] }];
+  c.entities = [
+    { id: "spawn", type: "playerSpawn", pos: [0, 6, 6] },
+    { id: "cp1", type: "checkpoint", pos: [12, 8, 0] },
+    { id: "c1", type: "coin", pos: [0, 5.5, 0] },
+    { id: "c2", type: "coin", pos: [12, 8.5, 0] },
+    { id: "c3", type: "coin", pos: [22, 11.5, 4] },
+    { id: "c4", type: "coin", pos: [-10, 2, 8] },
+    { id: "c5", type: "coin", pos: [4, 2, 14] },
+  ];
   return c;
 }
