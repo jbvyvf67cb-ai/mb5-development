@@ -45,16 +45,11 @@ export class App {
       isPlaying: () => self.mode === "play",
     });
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
+    this.editor.onHistoryChange = () => this.ui.updateHistory();
     this.editor.enable();
 
     scene.onBeforeRenderObservable.add(() => this.update());
-
-    addEventListener("keydown", (e) => {
-      if (e.code === "Tab") {
-        e.preventDefault();
-        this.toggleMode();
-      }
-    });
+    addEventListener("keydown", (e) => this.onKeyDown(e));
 
     const w = window as unknown as Record<string, unknown>;
     w.__app = this;
@@ -70,6 +65,46 @@ export class App {
   private makeEditor(): Editor {
     const ed = new Editor(this.scene, this.world, this.camera);
     return ed;
+  }
+
+  private onKeyDown(e: KeyboardEvent) {
+    if (e.code === "Tab") {
+      e.preventDefault();
+      this.toggleMode();
+      return;
+    }
+    if (this.mode === "play") return;
+    const tag = document.activeElement?.tagName ?? "";
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    const ed = this.editor;
+    if (e.ctrlKey || e.metaKey) {
+      if (e.code === "KeyZ") {
+        e.preventDefault();
+        if (e.shiftKey) ed.redo();
+        else ed.undo();
+      } else if (e.code === "KeyY") {
+        e.preventDefault();
+        ed.redo();
+      } else if (e.code === "KeyD") {
+        e.preventDefault();
+        ed.duplicateSelected();
+      }
+      return;
+    }
+    switch (e.code) {
+      case "Digit1": this.ui.setTool("select"); break;
+      case "Digit2": this.ui.setTool("place"); break;
+      case "Digit3": this.ui.setTool("sculpt"); break;
+      case "Digit4": this.ui.setTool("entity"); break;
+      case "KeyQ": ed.setGizmoMode("move"); break;
+      case "KeyW": ed.setGizmoMode("rotate"); break;
+      case "KeyE": ed.setGizmoMode("scale"); break;
+      case "KeyF": ed.focusSelected(); break;
+      case "Delete":
+      case "Backspace":
+        ed.deleteSelected();
+        break;
+    }
   }
 
   private update() {
@@ -127,8 +162,10 @@ export class App {
     this.world = buildContinent(this.scene, data);
     this.editor = this.makeEditor();
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
+    this.editor.onHistoryChange = () => this.ui.updateHistory();
     this.editor.enable();
     this.ui.showSelection(null);
+    this.ui.updateHistory();
     this.ui.setMode(false);
     const w = window as unknown as Record<string, unknown>;
     w.__world = this.world;

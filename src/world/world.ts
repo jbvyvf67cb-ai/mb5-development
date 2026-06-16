@@ -203,9 +203,51 @@ export class World implements ContinentResult {
       ...(opts.tint ? { tint: opts.tint } : {}),
       ...(opts.collider ? { collider: opts.collider } : {}),
     };
-    this.data.prefabs.push(inst);
+    return this.addPrefabInstance(inst);
+  }
+
+  /** Add a fully-specified instance (used by undo/redo + duplicate so ids are stable). */
+  addPrefabInstance(inst: PrefabInstance): PrefabInstance {
+    if (!this.data.prefabs.includes(inst)) this.data.prefabs.push(inst);
     this.realizePrefab(inst);
     return inst;
+  }
+
+  getPrefabInstance(id: string): PrefabInstance | undefined {
+    return this.data.prefabs.find((p) => p.id === id);
+  }
+
+  /** Set a prefab's transform from data values; updates mesh, data, collider. */
+  setPrefabTransform(id: string, t: { pos: Vec3; rot: Vec3; scale: Vec3 }) {
+    const mesh = this.prefabMeshes.get(id);
+    const inst = this.getPrefabInstance(id);
+    if (!mesh || !inst) return;
+    mesh.position.set(t.pos[0], t.pos[1], t.pos[2]);
+    mesh.rotation.set(t.rot[0], t.rot[1], t.rot[2]);
+    mesh.scaling.set(t.scale[0], t.scale[1], t.scale[2]);
+    inst.pos = [...t.pos];
+    inst.rot = [...t.rot];
+    inst.scale = [...t.scale];
+    this.rebuildCollider(id);
+  }
+
+  /** Recolor a prefab (tint multiplies its base color). */
+  setPrefabTint(id: string, tint: Vec3) {
+    const mesh = this.prefabMeshes.get(id);
+    const inst = this.getPrefabInstance(id);
+    if (!mesh || !inst) return;
+    inst.tint = [...tint];
+    const def = getPrefab(inst.prefab);
+    const base = def?.baseColor ?? [1, 1, 1];
+    mesh.material = this.material([base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]]);
+  }
+
+  /** Change a prefab's collider kind. */
+  setPrefabCollider(id: string, kind: ColliderKind) {
+    const inst = this.getPrefabInstance(id);
+    if (!inst) return;
+    inst.collider = kind;
+    this.rebuildCollider(id);
   }
 
   removePrefab(id: string) {
@@ -249,10 +291,25 @@ export class World implements ContinentResult {
   }
 
   addEntity(type: string, pos: Vec3): EntityInstance {
-    const ent: EntityInstance = { id: uid("e"), type, pos };
-    this.data.entities.push(ent);
+    return this.addEntityInstance({ id: uid("e"), type, pos });
+  }
+
+  addEntityInstance(ent: EntityInstance): EntityInstance {
+    if (!this.data.entities.includes(ent)) this.data.entities.push(ent);
     this.realizeEntity(ent);
     return ent;
+  }
+
+  getEntityInstance(id: string): EntityInstance | undefined {
+    return this.data.entities.find((e) => e.id === id);
+  }
+
+  setEntityPos(id: string, pos: Vec3) {
+    const mesh = this.entityMeshes.get(id);
+    const ent = this.getEntityInstance(id);
+    if (!mesh || !ent) return;
+    mesh.position.set(pos[0], pos[1], pos[2]);
+    ent.pos = [...pos];
   }
 
   removeEntity(id: string) {

@@ -49,6 +49,19 @@ function buildRamp(scene: Scene, name: string): Mesh {
   return m ?? new Mesh(name, scene);
 }
 
+/** Staircase rising along +Z from y=0 to y=1 over a unit footprint. */
+function buildStairs(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  const steps = 6;
+  for (let i = 0; i < steps; i++) {
+    const top = (i + 1) / steps;
+    const depth = 1 / steps;
+    const z = -0.5 + (i + 0.5) * depth;
+    b.box(new Vector3(0, top / 2, z), new Vector3(1, top, depth));
+  }
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
 const DEFS: Record<string, PrefabDef> = {
   block: {
     key: "block",
@@ -94,6 +107,25 @@ const DEFS: Record<string, PrefabDef> = {
     baseColor: [0.7, 0.68, 0.62],
     defaultScale: [1.5, 4, 1.5],
     build: (s, n) => MeshBuilder.CreateCylinder(n, { diameter: 1, height: 1, tessellation: 20 }, s),
+  },
+  stairs: {
+    key: "stairs",
+    label: "Stairs",
+    category: "structure",
+    collider: "mesh",
+    baseColor: [0.6, 0.58, 0.56],
+    defaultScale: [4, 3, 5],
+    build: buildStairs,
+  },
+  cone: {
+    key: "cone",
+    label: "Cone",
+    category: "structure",
+    collider: "mesh",
+    baseColor: [0.72, 0.66, 0.5],
+    defaultScale: [2.5, 4, 2.5],
+    build: (s, n) =>
+      MeshBuilder.CreateCylinder(n, { diameterTop: 0, diameterBottom: 1, height: 1, tessellation: 18 }, s),
   },
   ball: {
     key: "ball",
