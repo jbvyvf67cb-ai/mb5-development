@@ -29,7 +29,8 @@ editor. It is intentionally simple and flat so it is easy to generate.
     "version": 1,
     "bounds": { "min": [-65,-25,-65], "max": [65,45,65] }, // encloses everything
     "gravity": [0,-16,0],            // optional, this is the default
-    "killPlaneY": -40                // optional; fall below = respawn
+    "killPlaneY": -40,               // optional; fall below = respawn
+    "seaLevel": 0                    // optional; renders a translucent water plane at this Y
   },
   "terrain": { /* optional heightmap, see below */ },
   "prefabs":  [ /* placed 3D building blocks */ ],
@@ -51,7 +52,11 @@ A row-major grid of height samples over an XZ rectangle.
 ```
 - Height of cell (c, r) is `heights[r*cols + c]` meters.
 - 41×41 over 120 m ≈ a 3 m grid — plenty for gentle terrain; bump resolution for
-  finer hills. Keep it ≤ ~129×129 for now.
+  finer hills.
+- Terrain is auto-colored by elevation (sand → grass → rock → snow). Set
+  `meta.seaLevel` to flood everything below it with a translucent ocean — so a
+  heightmap of raised landmasses over a sea reads as a world map. The Joshua-style
+  offline-bake script for the hand-drawn world is `tools/gen-map.mjs`.
 
 ### prefabs (true-3D building blocks)
 Each entry is one placed instance. Unit prefab meshes are scaled/rotated/moved by

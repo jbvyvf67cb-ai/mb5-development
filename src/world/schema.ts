@@ -30,6 +30,8 @@ export interface ContinentMeta {
   gravity?: Vec3;
   /** Y below which the player is considered to have fallen out of the world. */
   killPlaneY?: number;
+  /** If set, a translucent water plane renders at this Y across the bounds (sea level). */
+  seaLevel?: number;
   /** Kept if any OSM-derived assets are ever used: "Map data © OpenStreetMap contributors". */
   attribution?: string;
 }

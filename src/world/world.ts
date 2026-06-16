@@ -63,6 +63,7 @@ export class World implements ContinentResult {
   private aggregates = new Map<string, PhysicsAggregate>();
   private matCache = new Map<string, StandardMaterial>();
   private terrainMat?: StandardMaterial;
+  private waterMat?: StandardMaterial;
 
   constructor(
     readonly scene: Scene,
@@ -74,8 +75,27 @@ export class World implements ContinentResult {
     scene.getPhysicsEngine()?.setGravity(new Vector3(g[0], g[1], g[2]));
 
     if (data.terrain) this.buildTerrainMesh();
+    if (data.meta.seaLevel !== undefined) this.buildWater(data.meta.seaLevel);
     for (const inst of data.prefabs) this.realizePrefab(inst);
     for (const ent of data.entities) this.realizeEntity(ent);
+  }
+
+  private buildWater(level: number) {
+    const b = this.data.meta.bounds;
+    const w = Math.max(2, b.max[0] - b.min[0]);
+    const d = Math.max(2, b.max[2] - b.min[2]);
+    const mesh = MeshBuilder.CreateGround("water", { width: w, height: d }, this.scene);
+    mesh.parent = this.root;
+    mesh.position.set((b.min[0] + b.max[0]) / 2, level, (b.min[2] + b.max[2]) / 2);
+    mesh.isPickable = false;
+    const mat = new StandardMaterial("mat:water", this.scene);
+    mat.diffuseColor = new Color3(0.1, 0.32, 0.55);
+    mat.specularColor = new Color3(0.4, 0.5, 0.6);
+    mat.emissiveColor = new Color3(0.04, 0.12, 0.2);
+    mat.alpha = 0.66;
+    mat.backFaceCulling = false;
+    mesh.material = mat;
+    this.waterMat = mat;
   }
 
   // --- materials ---
@@ -100,8 +120,8 @@ export class World implements ContinentResult {
     this.terrain.mesh.parent = this.root;
     if (!this.terrainMat) {
       this.terrainMat = new StandardMaterial("mat:terrain", this.scene);
-      this.terrainMat.diffuseColor = new Color3(0.22, 0.42, 0.24);
-      this.terrainMat.specularColor = new Color3(0.02, 0.03, 0.02);
+      this.terrainMat.diffuseColor = new Color3(1, 1, 1); // elevation vertex colors carry the look
+      this.terrainMat.specularColor = new Color3(0.03, 0.03, 0.03);
       this.terrainMat.backFaceCulling = false;
     }
     this.terrain.mesh.material = this.terrainMat;
@@ -129,6 +149,7 @@ export class World implements ContinentResult {
     const g = terrainGeometry(this.data.terrain);
     this.terrain.mesh.updateVerticesData(VertexBuffer.PositionKind, g.positions);
     this.terrain.mesh.updateVerticesData(VertexBuffer.NormalKind, g.normals);
+    this.terrain.mesh.updateVerticesData(VertexBuffer.ColorKind, g.colors);
   }
 
   /** Replace (or remove) the terrain entirely. */
@@ -354,6 +375,7 @@ export class World implements ContinentResult {
     this.root.dispose();
     this.matCache.forEach((m) => m.dispose());
     this.terrainMat?.dispose();
+    this.waterMat?.dispose();
   }
 }
 

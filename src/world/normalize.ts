@@ -142,6 +142,7 @@ export function normalizeContinent(raw: unknown): ContinentData {
       bounds,
       gravity: Array.isArray(metaRaw.gravity) ? vec3(metaRaw.gravity, DEFAULT_GRAVITY) : [...DEFAULT_GRAVITY],
       killPlaneY: num(metaRaw.killPlaneY, -40),
+      ...(typeof metaRaw.seaLevel === "number" ? { seaLevel: metaRaw.seaLevel } : {}),
     },
     prefabs,
     entities,
