@@ -8,6 +8,7 @@ import { Vector3 } from "@babylonjs/core";
 import type { GameState } from "./game/state";
 import type { ContinentData } from "./world/schema";
 import { buildContinent, spawnPoint, World } from "./world/world";
+import { flatTerrain, newContinent } from "./world/demo";
 import { Editor } from "./editor/editor";
 import { EditorUI } from "./editor/ui";
 import { Input } from "./core/input";
@@ -43,10 +44,16 @@ export class App {
       get editor() {
         return self.editor;
       },
+      get data() {
+        return self.world.data;
+      },
       getData: () => self.world.serialize(),
       loadData: (d) => self.loadContinent(d),
       togglePlay: () => self.toggleMode(),
       isPlaying: () => self.mode === "play",
+      setMeta: (p) => self.setMeta(p),
+      regenTerrain: (r) => self.regenTerrain(r),
+      newLevel: () => self.newLevel(),
     });
     this.hud = new Hud(state);
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
@@ -130,6 +137,28 @@ export class App {
       this.session?.update(dt);
       this.input.consume();
     }
+    this.world.updateCulling(this.camera.position);
+  }
+
+  // --- level properties (from the editor UI) ---
+
+  setMeta(patch: { name?: string; gravityY?: number; killPlaneY?: number }) {
+    const m = this.world.data.meta;
+    if (patch.name !== undefined) m.name = patch.name;
+    if (patch.killPlaneY !== undefined) m.killPlaneY = patch.killPlaneY;
+    if (patch.gravityY !== undefined) {
+      m.gravity = [0, patch.gravityY, 0];
+      this.scene.getPhysicsEngine()?.setGravity(new Vector3(0, patch.gravityY, 0));
+    }
+  }
+
+  regenTerrain(resolution: number) {
+    const size = this.world.data.terrain?.size[0] ?? 120;
+    this.world.setTerrain(flatTerrain(size, resolution));
+  }
+
+  newLevel() {
+    this.loadContinent(newContinent());
   }
 
   toggleMode() {

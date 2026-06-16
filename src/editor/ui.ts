@@ -10,10 +10,14 @@ import type { BrushMode, Editor, GizmoMode, Selection, Tool } from "./editor";
 
 export interface EditorHost {
   editor: Editor;
+  data: ContinentData;
   getData(): ContinentData;
   loadData(d: ContinentData): void;
   togglePlay(): void;
   isPlaying(): boolean;
+  setMeta(patch: { name?: string; gravityY?: number; killPlaneY?: number }): void;
+  regenTerrain(resolution: number): void;
+  newLevel(): void;
 }
 
 const ENTITY_TYPES = ["playerSpawn", "coin", "checkpoint", "enemy"];
@@ -136,12 +140,34 @@ export class EditorUI {
       slider("Strength", 0.1, 2, this.host.editor.brush.strength, (v) => (this.host.editor.brush.strength = v), 0.1),
     );
 
+    // level properties
+    this.root.appendChild(this.label("Level"));
+    const meta = this.host.data.meta;
+    const nameIn = el("input");
+    nameIn.type = "text";
+    nameIn.value = meta.name;
+    style(nameIn, { width: "100%", background: "#11131a", color: "#cdd6f4", border: "1px solid #313244", borderRadius: "4px", fontSize: "12px", padding: "3px", marginBottom: "4px" });
+    nameIn.onchange = () => this.host.setMeta({ name: nameIn.value });
+    this.root.appendChild(nameIn);
+    this.root.appendChild(
+      numField("Gravity Y", meta.gravity?.[1] ?? -16, (v) => this.host.setMeta({ gravityY: v })),
+    );
+    this.root.appendChild(
+      numField("Kill plane Y", meta.killPlaneY ?? -40, (v) => this.host.setMeta({ killPlaneY: v })),
+    );
+    const terrRow = row();
+    terrRow.appendChild(button("New Flat Terrain", () => this.host.regenTerrain(41)));
+    this.root.appendChild(terrRow);
+
     // file ops
     this.root.appendChild(this.label("File"));
     const fRow = row();
     fRow.appendChild(button("Save", () => this.save()));
     fRow.appendChild(button("Load", () => this.load()));
     fRow.appendChild(button("Reset Cam", () => reframe()));
+    fRow.appendChild(button("New Level", () => {
+      if (confirm("Discard current level and start fresh?")) this.host.newLevel();
+    }));
     this.root.appendChild(fRow);
 
     // inspector
@@ -366,6 +392,23 @@ function slider(
   wrap.appendChild(input);
   return wrap;
 }
+/** A labeled single numeric input. */
+function numField(labelText: string, value: number, onChange: (v: number) => void): HTMLElement {
+  const wrap = el("div");
+  style(wrap, { display: "flex", gap: "6px", alignItems: "center", marginBottom: "4px", fontSize: "12px" });
+  const lab = text("span", labelText);
+  style(lab, { flex: "1", color: "#a6adc8" });
+  const inp = el("input");
+  inp.type = "number";
+  inp.step = "1";
+  inp.value = String(value);
+  style(inp, { width: "56px", background: "#11131a", color: "#cdd6f4", border: "1px solid #313244", borderRadius: "4px", fontSize: "11px", padding: "2px" });
+  inp.onchange = () => onChange(parseFloat(inp.value) || 0);
+  wrap.appendChild(lab);
+  wrap.appendChild(inp);
+  return wrap;
+}
+
 /** A labeled row of 3 numeric inputs, tagged so readVec() can find it. */
 function vecRow(name: string, value: [number, number, number], onCommit: () => void): HTMLElement {
   const wrap = el("div");

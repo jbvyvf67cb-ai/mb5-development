@@ -131,6 +131,24 @@ export class World implements ContinentResult {
     this.terrain.mesh.updateVerticesData(VertexBuffer.NormalKind, g.normals);
   }
 
+  /** Replace (or remove) the terrain entirely. */
+  setTerrain(t: import("./schema").TerrainData | undefined) {
+    this.aggregates.get("__terrain")?.dispose();
+    this.aggregates.delete("__terrain");
+    this.terrain?.mesh.dispose();
+    this.terrain = undefined;
+    this.data.terrain = t;
+    if (t) this.buildTerrainMesh();
+  }
+
+  /** Distance-cull prefab meshes around a point (frustum culling still applies). */
+  updateCulling(cam: Vector3, radius = 240) {
+    const r2 = radius * radius;
+    for (const mesh of this.prefabMeshes.values()) {
+      mesh.setEnabled(Vector3.DistanceSquared(cam, mesh.position) < r2);
+    }
+  }
+
   /** Recreate the terrain collider from current geometry — call after a sculpt stroke. */
   rebuildTerrainPhysics() {
     if (!this.terrain) return;
