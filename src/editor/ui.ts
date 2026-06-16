@@ -40,6 +40,9 @@ export class EditorUI {
   private undoBtn!: HTMLButtonElement;
   private redoBtn!: HTMLButtonElement;
   private publishEl?: HTMLDivElement;
+  private nameIn!: HTMLInputElement;
+  private gravIn!: HTMLInputElement;
+  private killIn!: HTMLInputElement;
   private toolBtns = new Map<Tool, HTMLButtonElement>();
 
   constructor(host: EditorHost) {
@@ -149,18 +152,19 @@ export class EditorUI {
     // level properties
     this.root.appendChild(this.label("Level"));
     const meta = this.host.data.meta;
-    const nameIn = el("input");
-    nameIn.type = "text";
-    nameIn.value = meta.name;
-    style(nameIn, { width: "100%", background: "#11131a", color: "#cdd6f4", border: "1px solid #313244", borderRadius: "4px", fontSize: "12px", padding: "3px", marginBottom: "4px" });
-    nameIn.onchange = () => this.host.setMeta({ name: nameIn.value });
-    this.root.appendChild(nameIn);
-    this.root.appendChild(
-      numField("Gravity Y", meta.gravity?.[1] ?? -16, (v) => this.host.setMeta({ gravityY: v })),
-    );
-    this.root.appendChild(
-      numField("Kill plane Y", meta.killPlaneY ?? -40, (v) => this.host.setMeta({ killPlaneY: v })),
-    );
+    this.nameIn = el("input");
+    this.nameIn.type = "text";
+    this.nameIn.value = meta.name;
+    styleInput(this.nameIn);
+    this.nameIn.style.fontSize = "12px";
+    this.nameIn.onchange = () => this.host.setMeta({ name: this.nameIn.value });
+    this.root.appendChild(this.nameIn);
+    const grav = numField("Gravity Y", meta.gravity?.[1] ?? -16, (v) => this.host.setMeta({ gravityY: v }));
+    const kill = numField("Kill plane Y", meta.killPlaneY ?? -40, (v) => this.host.setMeta({ killPlaneY: v }));
+    this.gravIn = grav.querySelector("input")!;
+    this.killIn = kill.querySelector("input")!;
+    this.root.appendChild(grav);
+    this.root.appendChild(kill);
     const terrRow = row();
     terrRow.appendChild(button("New Flat Terrain", () => this.host.regenTerrain(41)));
     this.root.appendChild(terrRow);
@@ -279,6 +283,14 @@ export class EditorUI {
     this.sections.place.style.display = t === "place" ? "block" : "none";
     this.sections.entity.style.display = t === "entity" ? "block" : "none";
     this.sections.sculpt.style.display = t === "sculpt" ? "block" : "none";
+  }
+
+  /** Re-sync the Level inputs from the current data (after a load/new). */
+  refreshLevelFields() {
+    const meta = this.host.data.meta;
+    this.nameIn.value = meta.name;
+    this.gravIn.value = String(meta.gravity?.[1] ?? -16);
+    this.killIn.value = String(meta.killPlaneY ?? -40);
   }
 
   updateHistory() {

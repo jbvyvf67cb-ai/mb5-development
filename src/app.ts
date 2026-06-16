@@ -290,6 +290,7 @@ export class App {
     this.editor.enable();
     this.ui.showSelection(null);
     this.ui.updateHistory();
+    this.ui.refreshLevelFields();
     this.ui.setMode(false);
     const w = window as unknown as Record<string, unknown>;
     w.__world = this.world;
