@@ -7,6 +7,7 @@
 import type { ColliderKind, ContinentData, Vec3 } from "../world/schema";
 import { allPrefabs } from "../world/prefabs";
 import type { BrushMode, Editor, GizmoMode, Selection, Tool } from "./editor";
+import { loadConfig, loadToken, publishLevel, saveConfig, saveToken, type PublishConfig } from "./publish";
 
 export interface EditorHost {
   editor: Editor;
@@ -38,6 +39,7 @@ export class EditorUI {
   private playBtn: HTMLButtonElement;
   private undoBtn!: HTMLButtonElement;
   private redoBtn!: HTMLButtonElement;
+  private publishEl?: HTMLDivElement;
   private toolBtns = new Map<Tool, HTMLButtonElement>();
 
   constructor(host: EditorHost) {
@@ -186,6 +188,8 @@ export class EditorUI {
     }));
     this.root.appendChild(fRow);
 
+    this.buildPublishSection();
+
     // inspector
     this.root.appendChild(this.label("Selection"));
     this.inspector = el("div");
@@ -204,6 +208,68 @@ export class EditorUI {
     this.setTool("select");
     this.setMode(false);
     this.updateHistory();
+  }
+
+  private buildPublishSection() {
+    this.root.appendChild(this.label("Publish (GitHub)"));
+    const cfg = loadConfig();
+    const persist = () => saveConfig(cfg);
+
+    const tokIn = el("input");
+    tokIn.type = "password";
+    tokIn.placeholder = "fine-grained PAT (contents: write)";
+    tokIn.value = loadToken();
+    styleInput(tokIn);
+    this.root.appendChild(tokIn);
+    const tokRow = row();
+    tokRow.appendChild(button("Save Token", () => {
+      saveToken(tokIn.value.trim());
+      this.publishStatus("token saved (browser-local)");
+    }));
+    tokRow.appendChild(button("Clear Token", () => {
+      saveToken("");
+      tokIn.value = "";
+      this.publishStatus("token cleared");
+    }));
+    this.root.appendChild(tokRow);
+
+    const mk = (label: string, key: keyof PublishConfig) => {
+      const inp = el("input");
+      inp.type = "text";
+      inp.value = cfg[key];
+      inp.title = label;
+      inp.placeholder = label;
+      styleInput(inp);
+      inp.onchange = () => {
+        cfg[key] = inp.value.trim();
+        persist();
+      };
+      return inp;
+    };
+    this.root.appendChild(mk("owner", "owner"));
+    this.root.appendChild(mk("repo", "repo"));
+    this.root.appendChild(mk("branch", "branch"));
+    this.root.appendChild(mk("dir", "dir"));
+
+    const pubBtn = button("Publish to GitHub", async () => {
+      pubBtn.disabled = true;
+      this.publishStatus("publishing…");
+      const res = await publishLevel(this.host.getData(), cfg, tokIn.value.trim());
+      this.publishStatus(res.ok ? `✓ ${res.message}` : `✗ ${res.message}`, res.ok);
+      pubBtn.disabled = false;
+    });
+    style(pubBtn, { background: "#3a5", marginTop: "4px" });
+    this.root.appendChild(pubBtn);
+
+    this.publishEl = el("div");
+    style(this.publishEl, { fontSize: "11px", color: "#7f849c", marginTop: "4px", wordBreak: "break-word" });
+    this.root.appendChild(this.publishEl);
+  }
+
+  private publishStatus(msg: string, ok?: boolean) {
+    if (!this.publishEl) return;
+    this.publishEl.textContent = msg;
+    this.publishEl.style.color = ok === undefined ? "#7f849c" : ok ? "#a6e3a1" : "#f38ba8";
   }
 
   setTool(t: Tool) {
@@ -460,6 +526,18 @@ function readVec(box: HTMLElement, name: string): Vec3 {
   if (!wrap) return [0, 0, 0];
   const inputs = Array.from(wrap.querySelectorAll("input")) as HTMLInputElement[];
   return [parseFloat(inputs[0].value) || 0, parseFloat(inputs[1].value) || 0, parseFloat(inputs[2].value) || 0];
+}
+function styleInput(e: HTMLInputElement) {
+  style(e, {
+    width: "100%",
+    background: "#11131a",
+    color: "#cdd6f4",
+    border: "1px solid #313244",
+    borderRadius: "4px",
+    fontSize: "11px",
+    padding: "3px",
+    marginBottom: "4px",
+  });
 }
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);

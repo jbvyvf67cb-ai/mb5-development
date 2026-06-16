@@ -79,11 +79,14 @@ then get it into the repo one of two ways:
   or by handing the file to Claude in a session (Claude commits it via the
   GitHub integration). On the next Pages deploy it's live at
   `?level=./continents/<name>.json`.
-- **In-editor "Publish to GitHub" (self-service, needs a token).** *Optional,
-  not yet built* — a button that commits straight to `assets/continents/` via
-  the GitHub Contents API using a fine-grained Personal Access Token (scoped to
-  this repo's contents) stored in the browser. Convenient, but it keeps a write
-  token in `localStorage`, so only on a trusted personal machine.
+- **In-editor "Publish to GitHub" (self-service, needs a token).** The editor's
+  **Publish (GitHub)** panel commits the current level straight to the repo via
+  the GitHub Contents API. One-time: create a **fine-grained PAT** (Repository
+  access → this repo; Permissions → **Contents: Read and write**), paste it,
+  **Save Token** (kept in `localStorage`). Set owner/repo/branch/dir (prefilled),
+  then **Publish to GitHub** → it writes `assets/continents/<id>.json` on the
+  branch and Pages redeploys. Convenient, but it holds a write token in the
+  browser, so use only on a trusted personal machine (**Clear Token** wipes it).
 
 ## Levels & hand-drawn import
 
