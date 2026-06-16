@@ -1,0 +1,22 @@
+{
+  "name": "mb5",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "MB5 (working title) — a 3D globe open-world platformer. Continents are open-world levels; single-player and co-op; real physics.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^8.0.0",
+    "@babylonjs/havok": "^1.3.10"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vite-plugin-top-level-await": "^1.4.4"
+  }
+}
