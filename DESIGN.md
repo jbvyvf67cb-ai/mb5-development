@@ -72,8 +72,9 @@ surface. No gameplay yet.
 
 ## 4. Joshua reuse roadmap (source: `jbvyvf67cb-ai/wutang-arcade`)
 
-The import guide lives at `docs/JOSHUA-IMPORT-GUIDE.md` (committed copy of what
-was provided). Ranked by value:
+Source studied directly at commit `40a5394` (all 39 priority files read);
+distilled, source-accurate notes are in **`docs/JOSHUA-NOTES.md`**. The original
+import guide is at `docs/JOSHUA-IMPORT-GUIDE.md`. Ranked by value:
 
 | # | System | Joshua path(s) | Status here |
 |---|---|---|---|
@@ -88,10 +89,10 @@ was provided). Ranked by value:
 | 9 | Audio | `audio.ts`, `tools/audio/*` | ⏳ later |
 | 10 | QA rubric + screenshot harness | `qa/playwright/*`, `qa/shot.mjs` | ⏳ stand up early |
 
-> **Access blocker (2026-06-16):** `wutang-arcade` is private and outside this
-> session's GitHub scope, so the real source can't be read yet. The skeleton is
-> built from the import guide's descriptions. Direct ports of #4–#10 need the
-> actual files — pending repo access.
+> **Source access (resolved 2026-06-16):** `wutang-arcade` was briefly made
+> public; all 39 priority files were read at commit `40a5394` and distilled into
+> `docs/JOSHUA-NOTES.md`. Direct ports of #4–#10 can now proceed from accurate
+> source knowledge.
 
 ---
 
