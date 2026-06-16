@@ -10,12 +10,15 @@
 import type { Engine } from "@babylonjs/core/Engines/engine";
 import type { Scene } from "@babylonjs/core/scene";
 import type { GameState } from "../game/state";
+import type { ContinentResult } from "../world/loader";
 
 declare global {
   interface Window {
     __engine?: Engine;
     __scene?: Scene;
     __state?: GameState;
+    /** The currently loaded world. */
+    __continent?: ContinentResult;
     /** One-shot snapshot of key numbers for assertions / screenshots. */
     __telemetry?: () => Record<string, unknown>;
     /** Teleport the active camera target (more handles added as player lands). */
@@ -43,6 +46,8 @@ export function installDebug(ctx: DebugContext): void {
     meshes: scene.meshes.length,
     activeMeshes: scene.getActiveMeshes().length,
     physicsEnabled: !!scene.getPhysicsEngine(),
+    continent: window.__continent?.data.meta.id ?? null,
+    prefabCount: window.__continent?.prefabMeshes.size ?? 0,
     camera: scene.activeCamera
       ? scene.activeCamera.position.asArray().map((n) => +n.toFixed(2))
       : null,

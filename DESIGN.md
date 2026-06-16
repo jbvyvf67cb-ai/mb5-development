@@ -24,8 +24,34 @@
 ### First task: a **3D map maker** (level/world editor)
 An in-engine authoring tool to build the continents/levels: place geometry,
 props, collectibles, spawns, hazards, and physics objects; save/load to a data
-format; and (eventually) round-trip with the runtime world loader. Scope to be
-defined together — this doc will hold the spec once we lock it.
+format; and round-trip with the runtime world loader.
+
+**Locked scope (2026-06-16):**
+- **Geometry model: true-3D** — prefab placement (platforms, ramps, stairs,
+  pillars, props; each mesh + collider) **plus a sculptable heightmap terrain**
+  for organic ground. (Joshua's 2.5D extruded footprints are insufficient.)
+- **Globe model: deferred** — author flat continents with normal down-gravity
+  first; revisit globe traversal (kingdoms-on-a-globe vs walkable planet) after
+  the editor and some real levels exist.
+
+**Architecture — editor and game share one world layer:**
+- `ContinentData` (level format, JSON): `meta` (id, name, bounds, gravity),
+  optional heightmap `terrain`, `prefabs: PrefabInstance[]`,
+  `entities: EntityInstance[]`. Hand-editable; round-trips through the editor.
+- **World runtime** (shared by editor preview + game): a loader that
+  instantiates `ContinentData` with Havok colliders, plus the generic
+  `Buf`+chunk-merge+distance-cull module (lifted from Joshua) for scale.
+- **Editor layer**: free-fly cam, raycast pick + transform gizmos, prefab
+  palette, heightmap sculpt brushes, entity placement, undo/redo, save/load.
+
+**Milestones:**
+1. World runtime foundation — schema + prefab library + heightmap terrain +
+   physics loader + demo continent. *(in progress)*
+2. Generic `Buf`/chunk/cull batching for continent scale.
+3. Editor shell — free-fly cam, pick/select, transform gizmos, prefab
+   palette, place/delete.
+4. Heightmap sculpt brushes (raise/lower/smooth/flatten).
+5. Entity placement + save/load JSON + load authored continents into the game.
 
 ---
 
