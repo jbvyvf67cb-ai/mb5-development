@@ -80,7 +80,9 @@ place; reuse it as a sensible starting size when converting:
 | `block`    | cube                          | box              | `[2, 2, 2]`    |
 | `wall`     | tall thin box                 | box              | `[6, 4, 0.5]`  |
 | `ramp`     | wedge (rises along +Z)        | mesh             | `[4, 2, 4]`    |
+| `stairs`   | staircase (rises along +Z)    | mesh             | `[4, 3, 5]`    |
 | `pillar`   | cylinder                      | cylinder         | `[1.5, 4, 1.5]`|
+| `cone`     | cone                          | mesh             | `[2.5, 4, 2.5]`|
 | `ball`     | sphere (prop)                 | sphere           | `[2, 2, 2]`    |
 
 - A `ramp` rises from its low edge (−Z) to its high edge (+Z); rotate via
@@ -143,3 +145,7 @@ A top-down hand-drawn sketch maps to `ContinentData` like this:
 - **From console/automation:** `window.__app.loadContinent(<parsedJSON>)`.
 
 Round-trip is lossless: edit, then **Save** to get cleaned-up JSON back.
+
+> **Autosave:** the editor autosaves the current level to `localStorage`
+> (key `mb5.level`) on every change and restores it on reload, so a refresh
+> keeps your work. **New Level** starts fresh; **Load Demo** restores the demo.

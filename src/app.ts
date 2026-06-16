@@ -8,13 +8,15 @@ import { Vector3 } from "@babylonjs/core";
 import type { GameState } from "./game/state";
 import type { ContinentData } from "./world/schema";
 import { buildContinent, spawnPoint, World } from "./world/world";
-import { flatTerrain, newContinent } from "./world/demo";
+import { flatTerrain, makeDemoContinent, newContinent } from "./world/demo";
 import { Editor } from "./editor/editor";
 import { EditorUI } from "./editor/ui";
 import { Input } from "./core/input";
 import { PlayerController } from "./player/controller";
 import { Hud } from "./ui/hud";
 import { PlaySession } from "./game/play";
+
+export const SAVE_KEY = "mb5.level";
 
 export type Mode = "edit" | "play";
 
@@ -29,6 +31,11 @@ export class App {
   private player?: PlayerController;
   private session?: PlaySession;
   private camera: ArcRotateCamera;
+  private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  private historyChanged = () => {
+    this.ui.updateHistory();
+    this.scheduleSave();
+  };
 
   constructor(
     private scene: Scene,
@@ -54,10 +61,11 @@ export class App {
       setMeta: (p) => self.setMeta(p),
       regenTerrain: (r) => self.regenTerrain(r),
       newLevel: () => self.newLevel(),
+      loadDemo: () => self.loadDemo(),
     });
     this.hud = new Hud(state);
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
-    this.editor.onHistoryChange = () => this.ui.updateHistory();
+    this.editor.onHistoryChange = this.historyChanged;
     this.editor.enable();
 
     scene.onBeforeRenderObservable.add(() => this.update());
@@ -150,15 +158,33 @@ export class App {
       m.gravity = [0, patch.gravityY, 0];
       this.scene.getPhysicsEngine()?.setGravity(new Vector3(0, patch.gravityY, 0));
     }
+    this.scheduleSave();
   }
 
   regenTerrain(resolution: number) {
     const size = this.world.data.terrain?.size[0] ?? 120;
     this.world.setTerrain(flatTerrain(size, resolution));
+    this.scheduleSave();
   }
 
   newLevel() {
     this.loadContinent(newContinent());
+  }
+
+  loadDemo() {
+    this.loadContinent(makeDemoContinent());
+  }
+
+  /** Debounced autosave of the current level to localStorage. */
+  private scheduleSave() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(this.world.data));
+      } catch {
+        /* storage may be unavailable (private mode / quota) — ignore */
+      }
+    }, 600);
   }
 
   toggleMode() {
@@ -210,7 +236,7 @@ export class App {
     this.world = buildContinent(this.scene, data);
     this.editor = this.makeEditor();
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
-    this.editor.onHistoryChange = () => this.ui.updateHistory();
+    this.editor.onHistoryChange = this.historyChanged;
     this.editor.enable();
     this.ui.showSelection(null);
     this.ui.updateHistory();
@@ -221,6 +247,7 @@ export class App {
     w.__continent = this.world;
     this.state.emit("world:loaded", { id: data.meta.id });
     this.reframe();
+    this.scheduleSave();
   }
 
   /** Frame the camera on the level bounds. */

@@ -56,15 +56,27 @@ format; and round-trip with the runtime world loader.
 5. ✅ Entity placement + save/load JSON (download/upload) + `?level=` URL load
    + `App.loadContinent()`.
 
-**Also shipped:** a **Play mode** (Tab) — walk the level with a capsule
-controller (velocity-write movement, coyote/buffer jump, ray ground check),
-follow camera, and kill-plane respawn. Format documented in
-`docs/MAP-FORMAT.md` (incl. the hand-drawn → JSON conversion flow).
+**Also shipped (editor):** undo/redo (command history), grid snap, editable
+transform/tint/collider inspector, duplicate, focus, keyboard shortcuts
+(1-4 tools, Q/W/E gizmo, Ctrl+Z/Y, Ctrl+D, F, Del), grouped prefab palette
+(platform/block/wall/ramp/stairs/pillar/cone/ball), Level properties (name,
+gravity, kill-plane, New Flat Terrain), New Level / Load Demo, **autosave to
+localStorage** + restore on reload, and per-frame distance culling
+(`World.updateCulling`).
 
-**Next candidates:** chunk/cull batching (M2); per-instance numeric transform
-fields + grid snap + undo/redo in the editor; richer prefabs (stairs, slopes,
-moving platforms) and glTF prefab support; wiring entities to gameplay; the
-hand-drawn-map → `ContinentData` importer (Claude-assisted).
+**Also shipped (play):** Tab to play — capsule controller (velocity-write
+movement, coyote/buffer jump, **double-jump**, ray ground check), **chase
+camera**, **collectible coins**, **checkpoints** (set respawn), kill-plane
+respawn, and a **DOM HUD**. Body-aware teleport.
+
+`docs/MAP-FORMAT.md` documents the format + hand-drawn → JSON conversion flow;
+`README.md` has run instructions + controls.
+
+**Next candidates:** chunk-merge batching for very large continents (current
+culling is per-instance); free-fly editor camera; multi-select; moving/rotating
+platform prefabs + glTF prefab support; wiring enemies/hazards to gameplay; the
+Claude-assisted hand-drawn-map → `ContinentData` importer; tree-shaking the
+Babylon barrel import.
 
 ---
 

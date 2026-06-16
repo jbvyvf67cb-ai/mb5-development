@@ -7,8 +7,9 @@
 import { bootEngine } from "./core/setup";
 import { GameState } from "./game/state";
 import { installDebug } from "./core/debug";
-import { App } from "./app";
+import { App, SAVE_KEY } from "./app";
 import { makeDemoContinent } from "./world/demo";
+import type { ContinentData } from "./world/schema";
 
 const canvas = document.getElementById("app") as HTMLCanvasElement;
 const state = new GameState();
@@ -18,9 +19,18 @@ const { engine, scene } = await bootEngine(canvas);
 
 installDebug({ engine, scene, state });
 
-// The App owns the world + map-maker editor and the edit/play switch. It boots
-// in edit mode on a demo continent (until authored levels are loaded).
-const app = new App(scene, state, makeDemoContinent());
+// Boot content: a previously autosaved level (localStorage) if present,
+// otherwise the demo continent.
+let initial: ContinentData = makeDemoContinent();
+try {
+  const saved = localStorage.getItem(SAVE_KEY);
+  if (saved) initial = JSON.parse(saved) as ContinentData;
+} catch {
+  /* ignore malformed/unavailable storage */
+}
+
+// The App owns the world + map-maker editor and the edit/play switch.
+const app = new App(scene, state, initial);
 
 // Optional: ?level=<url> loads an authored/converted continent at boot
 // (e.g. ?level=./continents/foo.json). Useful for hand-drawn → JSON imports.

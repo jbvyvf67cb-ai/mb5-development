@@ -18,6 +18,7 @@ export interface EditorHost {
   setMeta(patch: { name?: string; gravityY?: number; killPlaneY?: number }): void;
   regenTerrain(resolution: number): void;
   newLevel(): void;
+  loadDemo(): void;
 }
 
 const ENTITY_TYPES = ["playerSpawn", "coin", "checkpoint", "enemy"];
@@ -167,6 +168,9 @@ export class EditorUI {
     fRow.appendChild(button("Reset Cam", () => reframe()));
     fRow.appendChild(button("New Level", () => {
       if (confirm("Discard current level and start fresh?")) this.host.newLevel();
+    }));
+    fRow.appendChild(button("Load Demo", () => {
+      if (confirm("Discard current level and load the demo?")) this.host.loadDemo();
     }));
     this.root.appendChild(fRow);
 
