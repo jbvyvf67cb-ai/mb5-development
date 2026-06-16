@@ -138,6 +138,14 @@ A top-down hand-drawn sketch maps to `ContinentData` like this:
 6. **Emit JSON** in the shape above. It does not need to be perfect — it is a
    *baseline*; load it in the editor and refine with gizmos and the sculpt brush.
 
+> **Imports are forgiving.** Every load runs through `normalizeContinent`
+> (`src/world/normalize.ts`): missing `id`s are generated, absent `rot`/`scale`
+> default (scale from the prefab's `defaultScale`), unknown prefab keys fall back
+> to `block`, terrain `heights` are padded/truncated to `cols*rows`, a
+> `playerSpawn` is added if none exists, and `meta.bounds` is computed from the
+> content when absent. So a partial/approximate baseline still loads — you only
+> need to get the shapes and positions roughly right.
+
 ### Loading a converted map
 - **In the editor:** click **Load** and pick the `.json`.
 - **At boot:** `?level=<url>` — drop the file in `assets/continents/` and open

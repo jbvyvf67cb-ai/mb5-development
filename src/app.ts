@@ -9,6 +9,7 @@ import type { GameState } from "./game/state";
 import type { ContinentData } from "./world/schema";
 import { buildContinent, spawnPoint, World } from "./world/world";
 import { flatTerrain, makeDemoContinent, newContinent } from "./world/demo";
+import { normalizeContinent } from "./world/normalize";
 import { Editor } from "./editor/editor";
 import { EditorUI } from "./editor/ui";
 import { Input } from "./core/input";
@@ -43,7 +44,7 @@ export class App {
     initial: ContinentData,
   ) {
     this.camera = scene.activeCamera as ArcRotateCamera;
-    this.world = buildContinent(scene, initial);
+    this.world = buildContinent(scene, normalizeContinent(initial));
     this.editor = this.makeEditor();
 
     const self = this;
@@ -229,7 +230,8 @@ export class App {
     this.state.setPhase("editor");
   }
 
-  loadContinent(data: ContinentData) {
+  loadContinent(raw: ContinentData) {
+    const data = normalizeContinent(raw);
     if (this.mode === "play") this.exitPlay();
     this.editor.disable();
     this.world.dispose();
