@@ -3,8 +3,8 @@
 // Edit mode: the map maker (Editor + EditorUI). Play mode: a capsule you walk
 // around the level with a follow camera and kill-plane respawn. Tab toggles.
 
-import type { ArcRotateCamera, Scene } from "@babylonjs/core";
-import { Vector3 } from "@babylonjs/core";
+import type { ArcRotateCamera, Mesh, Scene, StandardMaterial, Texture } from "@babylonjs/core";
+import { Color3, MeshBuilder, StandardMaterial as StdMat, Texture as Tex, Vector3 } from "@babylonjs/core";
 import type { GameState } from "./game/state";
 import type { ContinentData } from "./world/schema";
 import { buildContinent, spawnPoint, World } from "./world/world";
@@ -63,6 +63,9 @@ export class App {
       regenTerrain: (r) => self.regenTerrain(r),
       newLevel: () => self.newLevel(),
       loadDemo: () => self.loadDemo(),
+      setReferenceImage: (f) => self.setReferenceImage(f),
+      setReferenceOpacity: (v) => self.setReferenceOpacity(v),
+      clearReference: () => self.clearReference(),
     });
     this.hud = new Hud(state);
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
@@ -174,6 +177,51 @@ export class App {
 
   loadDemo() {
     this.loadContinent(makeDemoContinent());
+  }
+
+  // --- reference image underlay (tracing aid; not part of the level) ---
+
+  private refPlane?: Mesh;
+  private refMat?: StandardMaterial;
+  private refTex?: Texture;
+  private refUrl?: string;
+
+  setReferenceImage(file: File) {
+    this.clearReference();
+    const url = URL.createObjectURL(file);
+    this.refUrl = url;
+    const b = this.world.data.meta.bounds;
+    const w = Math.max(2, b.max[0] - b.min[0]);
+    const d = Math.max(2, b.max[2] - b.min[2]);
+    const plane = MeshBuilder.CreateGround("refPlane", { width: w, height: d }, this.scene);
+    plane.position.set((b.min[0] + b.max[0]) / 2, 0.1, (b.min[2] + b.max[2]) / 2);
+    plane.isPickable = false;
+    const mat = new StdMat("refMat", this.scene);
+    const tex = new Tex(url, this.scene);
+    mat.diffuseTexture = tex;
+    mat.emissiveColor = new Color3(1, 1, 1);
+    mat.disableLighting = true;
+    mat.backFaceCulling = false;
+    mat.alpha = 0.6;
+    plane.material = mat;
+    this.refPlane = plane;
+    this.refMat = mat;
+    this.refTex = tex;
+  }
+
+  setReferenceOpacity(v: number) {
+    if (this.refMat) this.refMat.alpha = v;
+  }
+
+  clearReference() {
+    this.refPlane?.dispose();
+    this.refMat?.dispose();
+    this.refTex?.dispose();
+    if (this.refUrl) URL.revokeObjectURL(this.refUrl);
+    this.refPlane = undefined;
+    this.refMat = undefined;
+    this.refTex = undefined;
+    this.refUrl = undefined;
   }
 
   /** Debounced autosave of the current level to localStorage. */

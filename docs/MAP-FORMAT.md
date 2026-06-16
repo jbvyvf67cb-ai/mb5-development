@@ -146,6 +146,10 @@ A top-down hand-drawn sketch maps to `ContinentData` like this:
 > content when absent. So a partial/approximate baseline still loads — you only
 > need to get the shapes and positions roughly right.
 
+> **Tracing aid:** the editor's **Ref Image** button drops the original sketch
+> in as a flat, opacity-adjustable underlay sized to the level bounds — place and
+> sculpt directly over the drawing. (It's an editor aid only, not saved in the level.)
+
 ### Loading a converted map
 - **In the editor:** click **Load** and pick the `.json`.
 - **At boot:** `?level=<url>` — drop the file in `assets/continents/` and open

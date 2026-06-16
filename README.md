@@ -36,8 +36,9 @@ Boots into **Edit mode**. Press **Tab** to **Play** (walk the level you built).
 **Duplicate** (`Ctrl+D`), **Delete** (`Del`), **Snap to grid**.
 
 **Level**: name, gravity, kill-plane, New Flat Terrain, **New Level**,
-**Load Demo**. **Save** downloads JSON; **Load** opens it. Work **autosaves**
-to the browser and restores on reload.
+**Load Demo**, and a **Ref Image** underlay (drop a scanned hand-drawn map in
+as a flat, opacity-adjustable tracing aid). **Save** downloads JSON; **Load**
+opens it. Work **autosaves** to the browser and restores on reload.
 
 **Play mode**: WASD move, Space to jump (double-jump in air), chase camera,
 collect coins, checkpoints set respawn, falling respawns you. Tab returns to

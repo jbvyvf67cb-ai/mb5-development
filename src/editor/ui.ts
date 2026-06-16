@@ -19,6 +19,9 @@ export interface EditorHost {
   regenTerrain(resolution: number): void;
   newLevel(): void;
   loadDemo(): void;
+  setReferenceImage(file: File): void;
+  setReferenceOpacity(v: number): void;
+  clearReference(): void;
 }
 
 const ENTITY_TYPES = ["playerSpawn", "coin", "checkpoint", "enemy"];
@@ -160,6 +163,15 @@ export class EditorUI {
     terrRow.appendChild(button("New Flat Terrain", () => this.host.regenTerrain(41)));
     this.root.appendChild(terrRow);
 
+    // reference image underlay (tracing aid for hand-drawn maps)
+    const refRow = row();
+    refRow.appendChild(button("Ref Image", () => this.pickReference()));
+    refRow.appendChild(button("Clear Ref", () => this.host.clearReference()));
+    this.root.appendChild(refRow);
+    this.root.appendChild(
+      slider("Ref opacity", 0, 1, 0.6, (v) => this.host.setReferenceOpacity(v), 0.05),
+    );
+
     // file ops
     this.root.appendChild(this.label("File"));
     const fRow = row();
@@ -289,6 +301,17 @@ export class EditorUI {
       } catch (err) {
         console.error("[editor] failed to load JSON", err);
       }
+    };
+    input.click();
+  }
+
+  private pickReference() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (file) this.host.setReferenceImage(file);
     };
     input.click();
   }
