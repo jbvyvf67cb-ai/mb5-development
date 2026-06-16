@@ -7,7 +7,7 @@
 import { bootEngine } from "./core/setup";
 import { GameState } from "./game/state";
 import { installDebug } from "./core/debug";
-import { buildContinent } from "./world/loader";
+import { App } from "./app";
 import { makeDemoContinent } from "./world/demo";
 
 const canvas = document.getElementById("app") as HTMLCanvasElement;
@@ -16,21 +16,17 @@ const state = new GameState();
 // Havok's WASM init makes boot async; vite-plugin-top-level-await allows this.
 const { engine, scene } = await bootEngine(canvas);
 
-// Load a world. Until the editor + authored levels exist, this is a demo
-// continent (heightmap terrain + prefabs) that also serves as the runtime test.
-const continent = buildContinent(scene, makeDemoContinent());
-
 installDebug({ engine, scene, state });
-window.__continent = continent;
+
+// The App owns the world + map-maker editor and the edit/play switch. It boots
+// in edit mode on a demo continent (until authored levels are loaded).
+const app = new App(scene, state, makeDemoContinent());
 
 addEventListener("resize", () => engine.resize());
 engine.runRenderLoop(() => scene.render());
 
-// Hand off from the loading screen.
+// Hand off from the loading screen into the editor.
 document.getElementById("boot")?.remove();
-state.setPhase("title");
-state.emit("world:loaded", { id: continent.data.meta.id });
+state.setPhase("editor");
+state.emit("world:loaded", { id: app.world.data.meta.id });
 state.emit("ready", undefined);
-
-// Skeleton goes straight into "playing"; a title screen / menu lands later.
-state.setPhase("playing");

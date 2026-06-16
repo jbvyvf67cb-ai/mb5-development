@@ -5,6 +5,7 @@ import { emptyContinent, type ContinentData, type PrefabInstance } from "./schem
 
 export function makeDemoContinent(): ContinentData {
   const c = emptyContinent("demo", "Demo Continent");
+  c.meta.bounds = { min: [-65, -25, -65], max: [65, 45, 65] };
 
   // Gentle rolling heightmap.
   const cols = 41;

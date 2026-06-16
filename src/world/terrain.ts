@@ -29,7 +29,15 @@ export function heightAt(data: TerrainData, c: number, r: number): number {
   return data.heights[r * cols + c] ?? 0;
 }
 
-export function buildTerrain(scene: Scene, data: TerrainData, name = "terrain"): TerrainMesh {
+export interface TerrainGeometry {
+  positions: number[];
+  indices: number[];
+  normals: number[];
+  uvs: number[];
+}
+
+/** Compute terrain vertex data from the height grid (shared by build + sculpt refresh). */
+export function terrainGeometry(data: TerrainData): TerrainGeometry {
   const [cols, rows] = data.resolution;
   const [sizeX, sizeZ] = data.size;
   const origin = terrainOrigin(data);
@@ -59,14 +67,24 @@ export function buildTerrain(scene: Scene, data: TerrainData, name = "terrain"):
 
   const normals: number[] = [];
   VertexData.ComputeNormals(positions, indices, normals);
+  return { positions, indices, normals, uvs };
+}
 
+export function buildTerrain(scene: Scene, data: TerrainData, name = "terrain"): TerrainMesh {
+  const [cols, rows] = data.resolution;
+  const [sizeX, sizeZ] = data.size;
+  const origin = terrainOrigin(data);
+  const cellX = cols > 1 ? sizeX / (cols - 1) : sizeX;
+  const cellZ = rows > 1 ? sizeZ / (rows - 1) : sizeZ;
+
+  const g = terrainGeometry(data);
   const mesh = new Mesh(name, scene);
   const vd = new VertexData();
-  vd.positions = positions;
-  vd.indices = indices;
-  vd.normals = normals;
-  vd.uvs = uvs;
-  vd.applyToMesh(mesh, true); // updatable: sculpt brushes will rewrite positions
+  vd.positions = g.positions;
+  vd.indices = g.indices;
+  vd.normals = g.normals;
+  vd.uvs = g.uvs;
+  vd.applyToMesh(mesh, true); // updatable: sculpt brushes rewrite positions
   mesh.receiveShadows = true;
 
   return { mesh, origin, cols, rows, cellX, cellZ };

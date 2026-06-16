@@ -1,0 +1,151 @@
+// App — owns the world, editor, UI, and the edit/play mode switch.
+//
+// Edit mode: the map maker (Editor + EditorUI). Play mode: a capsule you walk
+// around the level with a follow camera and kill-plane respawn. Tab toggles.
+
+import type { ArcRotateCamera, Scene } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
+import type { GameState } from "./game/state";
+import type { ContinentData } from "./world/schema";
+import { buildContinent, spawnPoint, World } from "./world/world";
+import { Editor } from "./editor/editor";
+import { EditorUI } from "./editor/ui";
+import { Input } from "./core/input";
+import { PlayerController } from "./player/controller";
+
+export type Mode = "edit" | "play";
+
+export class App {
+  world: World;
+  editor: Editor;
+  mode: Mode = "edit";
+
+  private ui: EditorUI;
+  private input = new Input();
+  private player?: PlayerController;
+  private camera: ArcRotateCamera;
+
+  constructor(
+    private scene: Scene,
+    private state: GameState,
+    initial: ContinentData,
+  ) {
+    this.camera = scene.activeCamera as ArcRotateCamera;
+    this.world = buildContinent(scene, initial);
+    this.editor = this.makeEditor();
+
+    const self = this;
+    this.ui = new EditorUI({
+      get editor() {
+        return self.editor;
+      },
+      getData: () => self.world.serialize(),
+      loadData: (d) => self.loadContinent(d),
+      togglePlay: () => self.toggleMode(),
+      isPlaying: () => self.mode === "play",
+    });
+    this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
+    this.editor.enable();
+
+    scene.onBeforeRenderObservable.add(() => this.update());
+
+    addEventListener("keydown", (e) => {
+      if (e.code === "Tab") {
+        e.preventDefault();
+        this.toggleMode();
+      }
+    });
+
+    const w = window as unknown as Record<string, unknown>;
+    w.__app = this;
+    w.__world = this.world;
+    w.__editor = this.editor;
+    w.__continent = this.world;
+    w.__reframe = () => this.reframe();
+    w.__setMode = (m: Mode) => (m === this.mode ? undefined : this.toggleMode());
+
+    this.reframe();
+  }
+
+  private makeEditor(): Editor {
+    const ed = new Editor(this.scene, this.world, this.camera);
+    return ed;
+  }
+
+  private update() {
+    const dt = Math.min(this.scene.getEngine().getDeltaTime() / 1000, 0.1);
+    if (this.mode === "play" && this.player) {
+      this.input.poll();
+      const camYaw = -this.camera.alpha - Math.PI / 2;
+      this.player.update(dt, this.input.state, camYaw);
+      // follow: translate the orbit pivot, preserving the user's alpha/beta/radius
+      this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, 1, 0);
+      const killY = this.world.data.meta.killPlaneY ?? -40;
+      if (this.player.position.y < killY) this.player.teleport(spawnPoint(this.world.data));
+      this.input.consume();
+    }
+  }
+
+  toggleMode() {
+    if (this.mode === "edit") this.enterPlay();
+    else this.exitPlay();
+  }
+
+  private enterPlay() {
+    this.mode = "play";
+    this.editor.disable();
+    this.ui.setMode(true);
+    this.player = new PlayerController(this.scene, spawnPoint(this.world.data));
+    this.input.attach();
+    this.camera.target.copyFrom(this.player.position);
+    this.camera.radius = 14;
+    this.camera.beta = 1.1;
+    (window as unknown as Record<string, unknown>).__player = this.player;
+    this.state.setPhase("playing");
+    this.state.emit("player:spawn", {
+      x: this.player.position.x,
+      y: this.player.position.y,
+      z: this.player.position.z,
+    });
+  }
+
+  private exitPlay() {
+    this.mode = "edit";
+    this.input.detach();
+    this.player?.dispose();
+    this.player = undefined;
+    (window as unknown as Record<string, unknown>).__player = undefined;
+    this.editor.enable();
+    this.ui.setMode(false);
+    this.state.setPhase("editor");
+  }
+
+  loadContinent(data: ContinentData) {
+    if (this.mode === "play") this.exitPlay();
+    this.editor.disable();
+    this.world.dispose();
+    this.world = buildContinent(this.scene, data);
+    this.editor = this.makeEditor();
+    this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
+    this.editor.enable();
+    this.ui.showSelection(null);
+    this.ui.setMode(false);
+    const w = window as unknown as Record<string, unknown>;
+    w.__world = this.world;
+    w.__editor = this.editor;
+    w.__continent = this.world;
+    this.state.emit("world:loaded", { id: data.meta.id });
+    this.reframe();
+  }
+
+  /** Frame the camera on the level bounds. */
+  reframe() {
+    const { min, max } = this.world.data.meta.bounds;
+    const center = new Vector3((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
+    const span = Math.max(max[0] - min[0], max[2] - min[2], 10);
+    this.camera.setTarget(center);
+    this.camera.radius = span * 0.9;
+    this.camera.alpha = -Math.PI / 2;
+    this.camera.beta = 1.0;
+  }
+}

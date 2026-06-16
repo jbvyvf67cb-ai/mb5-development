@@ -1,0 +1,293 @@
+// World — a live, mutable continent in a Babylon scene.
+//
+// Wraps a ContinentData (the source of truth) plus the meshes/colliders that
+// realize it, and exposes mutation ops the editor drives (add/remove/transform
+// prefabs and entities, re-sculpt terrain). The game uses the same class to load
+// a finished level. `data` always reflects the current scene, so `serialize()`
+// is just `data`.
+
+import {
+  Color3,
+  Mesh,
+  MeshBuilder,
+  PhysicsAggregate,
+  PhysicsShapeType,
+  StandardMaterial,
+  TransformNode,
+  VertexBuffer,
+} from "@babylonjs/core";
+import type { PhysicsShapeParameters, Scene } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
+import type { ColliderKind, ContinentData, EntityInstance, PrefabInstance, Vec3 } from "./schema";
+import { DEFAULT_GRAVITY } from "./schema";
+import { getPrefab } from "./prefabs";
+import { buildTerrain, terrainGeometry, type TerrainMesh } from "./terrain";
+
+export interface ContinentResult {
+  root: TransformNode;
+  data: ContinentData;
+  prefabMeshes: Map<string, Mesh>;
+  entityMeshes: Map<string, Mesh>;
+  terrain?: TerrainMesh;
+  dispose(): void;
+}
+
+const SHAPE: Record<Exclude<ColliderKind, "auto">, PhysicsShapeType | null> = {
+  box: PhysicsShapeType.BOX,
+  sphere: PhysicsShapeType.SPHERE,
+  capsule: PhysicsShapeType.CAPSULE,
+  cylinder: PhysicsShapeType.CYLINDER,
+  mesh: PhysicsShapeType.MESH,
+  none: null,
+};
+
+const ENTITY_COLORS: Record<string, Color3> = {
+  playerSpawn: new Color3(0.2, 1, 0.4),
+  checkpoint: new Color3(0.3, 0.7, 1),
+  coin: new Color3(1, 0.85, 0.2),
+  enemy: new Color3(1, 0.3, 0.3),
+};
+
+let idCounter = 0;
+function uid(prefix: string): string {
+  idCounter++;
+  return `${prefix}${Date.now().toString(36)}${idCounter.toString(36)}`;
+}
+
+export class World implements ContinentResult {
+  root: TransformNode;
+  prefabMeshes = new Map<string, Mesh>();
+  entityMeshes = new Map<string, Mesh>();
+  terrain?: TerrainMesh;
+
+  private aggregates = new Map<string, PhysicsAggregate>();
+  private matCache = new Map<string, StandardMaterial>();
+  private terrainMat?: StandardMaterial;
+
+  constructor(
+    readonly scene: Scene,
+    readonly data: ContinentData,
+  ) {
+    this.root = new TransformNode(`continent:${data.meta.id}`, scene);
+
+    const g = data.meta.gravity ?? DEFAULT_GRAVITY;
+    scene.getPhysicsEngine()?.setGravity(new Vector3(g[0], g[1], g[2]));
+
+    if (data.terrain) this.buildTerrainMesh();
+    for (const inst of data.prefabs) this.realizePrefab(inst);
+    for (const ent of data.entities) this.realizeEntity(ent);
+  }
+
+  // --- materials ---
+
+  private material(rgb: Vec3): StandardMaterial {
+    const key = rgb.map((n) => n.toFixed(3)).join("_");
+    let m = this.matCache.get(key);
+    if (!m) {
+      m = new StandardMaterial(`mat:${key}`, this.scene);
+      m.diffuseColor = new Color3(rgb[0], rgb[1], rgb[2]);
+      m.specularColor = new Color3(0.04, 0.04, 0.04);
+      this.matCache.set(key, m);
+    }
+    return m;
+  }
+
+  // --- terrain ---
+
+  private buildTerrainMesh() {
+    if (!this.data.terrain) return;
+    this.terrain = buildTerrain(this.scene, this.data.terrain);
+    this.terrain.mesh.parent = this.root;
+    if (!this.terrainMat) {
+      this.terrainMat = new StandardMaterial("mat:terrain", this.scene);
+      this.terrainMat.diffuseColor = new Color3(0.22, 0.42, 0.24);
+      this.terrainMat.specularColor = new Color3(0.02, 0.03, 0.02);
+      this.terrainMat.backFaceCulling = false;
+    }
+    this.terrain.mesh.material = this.terrainMat;
+    const agg = new PhysicsAggregate(
+      this.terrain.mesh,
+      PhysicsShapeType.MESH,
+      { mass: 0, friction: 0.9 },
+      this.scene,
+    );
+    this.aggregates.set("__terrain", agg);
+  }
+
+  /** Rebuild the terrain mesh + collider after its heights array was mutated. */
+  rebuildTerrain() {
+    this.aggregates.get("__terrain")?.dispose();
+    this.aggregates.delete("__terrain");
+    this.terrain?.mesh.dispose();
+    this.terrain = undefined;
+    this.buildTerrainMesh();
+  }
+
+  /** Cheap live update of terrain geometry from heights (no physics) — for sculpt drag. */
+  refreshTerrainGeometry() {
+    if (!this.data.terrain || !this.terrain) return;
+    const g = terrainGeometry(this.data.terrain);
+    this.terrain.mesh.updateVerticesData(VertexBuffer.PositionKind, g.positions);
+    this.terrain.mesh.updateVerticesData(VertexBuffer.NormalKind, g.normals);
+  }
+
+  /** Recreate the terrain collider from current geometry — call after a sculpt stroke. */
+  rebuildTerrainPhysics() {
+    if (!this.terrain) return;
+    this.aggregates.get("__terrain")?.dispose();
+    const agg = new PhysicsAggregate(
+      this.terrain.mesh,
+      PhysicsShapeType.MESH,
+      { mass: 0, friction: 0.9 },
+      this.scene,
+    );
+    this.aggregates.set("__terrain", agg);
+  }
+
+  // --- prefabs ---
+
+  private realizePrefab(inst: PrefabInstance): Mesh | null {
+    const def = getPrefab(inst.prefab);
+    if (!def) {
+      console.warn(`[world] unknown prefab "${inst.prefab}" (instance ${inst.id})`);
+      return null;
+    }
+    const mesh = def.build(this.scene, `prefab:${inst.id}`);
+    mesh.parent = this.root;
+    mesh.position.set(inst.pos[0], inst.pos[1], inst.pos[2]);
+    mesh.rotation.set(inst.rot[0], inst.rot[1], inst.rot[2]);
+    mesh.scaling.set(inst.scale[0], inst.scale[1], inst.scale[2]);
+
+    const tint = inst.tint ?? [1, 1, 1];
+    mesh.material = this.material([
+      def.baseColor[0] * tint[0],
+      def.baseColor[1] * tint[1],
+      def.baseColor[2] * tint[2],
+    ]);
+    mesh.metadata = { instanceId: inst.id, prefab: inst.prefab };
+    this.prefabMeshes.set(inst.id, mesh);
+    this.rebuildCollider(inst.id);
+    return mesh;
+  }
+
+  private rebuildCollider(id: string) {
+    const mesh = this.prefabMeshes.get(id);
+    const inst = this.data.prefabs.find((p) => p.id === id);
+    if (!mesh || !inst) return;
+    this.aggregates.get(id)?.dispose();
+    this.aggregates.delete(id);
+    const def = getPrefab(inst.prefab);
+    const kind = !inst.collider || inst.collider === "auto" ? def?.collider ?? "box" : inst.collider;
+    const shape = SHAPE[kind];
+    if (shape !== null) {
+      mesh.computeWorldMatrix(true);
+      const params: PhysicsShapeParameters = {};
+      const agg = new PhysicsAggregate(mesh, shape, { mass: 0, friction: 0.8, ...params }, this.scene);
+      this.aggregates.set(id, agg);
+    }
+  }
+
+  /** Add a new prefab instance; returns the created record. */
+  addPrefab(
+    prefab: string,
+    pos: Vec3,
+    opts: { rot?: Vec3; scale?: Vec3; tint?: Vec3; collider?: ColliderKind } = {},
+  ): PrefabInstance {
+    const def = getPrefab(prefab);
+    const inst: PrefabInstance = {
+      id: uid("p"),
+      prefab,
+      pos,
+      rot: opts.rot ?? [0, 0, 0],
+      scale: opts.scale ?? (def?.defaultScale ?? [1, 1, 1]),
+      ...(opts.tint ? { tint: opts.tint } : {}),
+      ...(opts.collider ? { collider: opts.collider } : {}),
+    };
+    this.data.prefabs.push(inst);
+    this.realizePrefab(inst);
+    return inst;
+  }
+
+  removePrefab(id: string) {
+    this.aggregates.get(id)?.dispose();
+    this.aggregates.delete(id);
+    this.prefabMeshes.get(id)?.dispose();
+    this.prefabMeshes.delete(id);
+    const i = this.data.prefabs.findIndex((p) => p.id === id);
+    if (i >= 0) this.data.prefabs.splice(i, 1);
+  }
+
+  /** After a gizmo drag, copy the mesh transform back into data + rebuild collider. */
+  syncPrefabFromMesh(id: string) {
+    const mesh = this.prefabMeshes.get(id);
+    const inst = this.data.prefabs.find((p) => p.id === id);
+    if (!mesh || !inst) return;
+    inst.pos = [mesh.position.x, mesh.position.y, mesh.position.z];
+    inst.rot = [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z];
+    inst.scale = [mesh.scaling.x, mesh.scaling.y, mesh.scaling.z];
+    this.rebuildCollider(id);
+  }
+
+  // --- entities ---
+
+  private realizeEntity(ent: EntityInstance): Mesh {
+    const marker = MeshBuilder.CreateSphere(
+      `entity:${ent.id}`,
+      { diameter: 0.9, segments: 8 },
+      this.scene,
+    );
+    marker.parent = this.root;
+    marker.position.set(ent.pos[0], ent.pos[1], ent.pos[2]);
+    const mat = new StandardMaterial(`entmat:${ent.id}`, this.scene);
+    const c = ENTITY_COLORS[ent.type] ?? new Color3(0.9, 0.9, 0.9);
+    mat.emissiveColor = c;
+    mat.diffuseColor = c;
+    marker.material = mat;
+    marker.metadata = { entityId: ent.id, type: ent.type };
+    this.entityMeshes.set(ent.id, marker);
+    return marker;
+  }
+
+  addEntity(type: string, pos: Vec3): EntityInstance {
+    const ent: EntityInstance = { id: uid("e"), type, pos };
+    this.data.entities.push(ent);
+    this.realizeEntity(ent);
+    return ent;
+  }
+
+  removeEntity(id: string) {
+    this.entityMeshes.get(id)?.dispose();
+    this.entityMeshes.delete(id);
+    const i = this.data.entities.findIndex((e) => e.id === id);
+    if (i >= 0) this.data.entities.splice(i, 1);
+  }
+
+  syncEntityFromMesh(id: string) {
+    const mesh = this.entityMeshes.get(id);
+    const ent = this.data.entities.find((e) => e.id === id);
+    if (!mesh || !ent) return;
+    ent.pos = [mesh.position.x, mesh.position.y, mesh.position.z];
+  }
+
+  serialize(): ContinentData {
+    return this.data;
+  }
+
+  dispose() {
+    this.aggregates.forEach((a) => a.dispose());
+    this.aggregates.clear();
+    this.root.dispose();
+    this.matCache.forEach((m) => m.dispose());
+    this.terrainMat?.dispose();
+  }
+}
+
+export function buildContinent(scene: Scene, data: ContinentData): World {
+  return new World(scene, data);
+}
+
+/** Find the first player-spawn entity position, or a default. */
+export function spawnPoint(data: ContinentData): Vector3 {
+  const s = data.entities.find((e) => e.type === "playerSpawn");
+  return s ? new Vector3(s.pos[0], s.pos[1], s.pos[2]) : new Vector3(0, 5, 0);
+}

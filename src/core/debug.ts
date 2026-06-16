@@ -10,7 +10,7 @@
 import type { Engine } from "@babylonjs/core/Engines/engine";
 import type { Scene } from "@babylonjs/core/scene";
 import type { GameState } from "../game/state";
-import type { ContinentResult } from "../world/loader";
+import type { ContinentResult } from "../world/world";
 
 declare global {
   interface Window {
@@ -48,6 +48,8 @@ export function installDebug(ctx: DebugContext): void {
     physicsEnabled: !!scene.getPhysicsEngine(),
     continent: window.__continent?.data.meta.id ?? null,
     prefabCount: window.__continent?.prefabMeshes.size ?? 0,
+    mode: (window as unknown as { __app?: { mode?: string } }).__app?.mode ?? null,
+    player: playerPos(),
     camera: scene.activeCamera
       ? scene.activeCamera.position.asArray().map((n) => +n.toFixed(2))
       : null,
@@ -56,4 +58,10 @@ export function installDebug(ctx: DebugContext): void {
   window.__tp = (x, y, z) => {
     scene.activeCamera?.position.set(x, y, z);
   };
+}
+
+function playerPos(): [number, number, number] | null {
+  const p = (window as unknown as { __player?: { position?: { x: number; y: number; z: number } } })
+    .__player?.position;
+  return p ? [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)] : null;
 }
