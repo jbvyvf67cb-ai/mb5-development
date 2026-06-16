@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "id": "sample",
+    "name": "Sample Continent",
+    "version": 1,
+    "bounds": { "min": [-65, -25, -65], "max": [65, 45, 65] },
+    "gravity": [0, -16, 0],
+    "killPlaneY": -40
+  },
+  "terrain": {
+    "size": [120, 120],
+    "resolution": [9, 9],
+    "heights": [
+      0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 1, 1, 1, 0, 0, 0, 0, 0,
+      0, 1, 2, 1, 0, 0, 0, 0, 0,
+      0, 1, 1, 1, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 1, 1, 1, 0,
+      0, 0, 0, 0, 1, 2, 2, 1, 0,
+      0, 0, 0, 0, 1, 2, 3, 1, 0,
+      0, 0, 0, 0, 1, 1, 1, 1, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+  },
+  "prefabs": [
+    { "id": "p1", "prefab": "platform", "pos": [0, 4, 0], "rot": [0, 0, 0], "scale": [8, 0.6, 8] },
+    { "id": "p2", "prefab": "ramp", "pos": [0, 0.5, -10], "rot": [0, 0, 0], "scale": [6, 3.5, 8] },
+    { "id": "p3", "prefab": "platform", "pos": [12, 7, 0], "rot": [0, 0, 0], "scale": [6, 0.6, 6], "tint": [0.6, 0.8, 1] },
+    { "id": "p4", "prefab": "stairs", "pos": [12, 0, -8], "rot": [0, 3.14159, 0], "scale": [5, 7, 9] },
+    { "id": "p5", "prefab": "pillar", "pos": [-12, 0, 8], "rot": [0, 0, 0], "scale": [1.5, 8, 1.5] }
+  ],
+  "entities": [
+    { "id": "spawn", "type": "playerSpawn", "pos": [0, 6, 6] },
+    { "id": "cp1", "type": "checkpoint", "pos": [12, 8, 0] },
+    { "id": "c1", "type": "coin", "pos": [0, 5.5, 0] },
+    { "id": "c2", "type": "coin", "pos": [12, 8.5, 0] }
+  ]
+}

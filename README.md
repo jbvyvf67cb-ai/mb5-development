@@ -59,6 +59,32 @@ docs/        JOSHUA-* notes, MAP-FORMAT.md (the level format + import flow)
 qa/          shot.mjs headless harness
 ```
 
+## Hosting on GitHub Pages
+
+The build is fully static (`base: "./"`), so it serves from a Pages project site.
+
+**One-time setup:** repo **Settings → Pages → Build and deployment → Source:
+"GitHub Actions"**. After that, `.github/workflows/pages.yml` builds and deploys
+on every push (or a manual *Run workflow*). The site lands at
+`https://jbvyvf67cb-ai.github.io/mb5-development/`.
+
+## Publishing maps back to GitHub
+
+A Pages-served page is static — the browser can't write to the repo on its own.
+**Export** a level with the editor's **Save** button (downloads `<id>.json`),
+then get it into the repo one of two ways:
+
+- **Commit it (no secrets, recommended).** Drop the JSON into
+  `assets/continents/` and commit — by `git`, GitHub's web "Add file → Upload",
+  or by handing the file to Claude in a session (Claude commits it via the
+  GitHub integration). On the next Pages deploy it's live at
+  `?level=./continents/<name>.json`.
+- **In-editor "Publish to GitHub" (self-service, needs a token).** *Optional,
+  not yet built* — a button that commits straight to `assets/continents/` via
+  the GitHub Contents API using a fine-grained Personal Access Token (scoped to
+  this repo's contents) stored in the browser. Convenient, but it keeps a write
+  token in `localStorage`, so only on a trusted personal machine.
+
 ## Levels & hand-drawn import
 
 The level format and the **hand-drawn map → JSON** conversion flow are
