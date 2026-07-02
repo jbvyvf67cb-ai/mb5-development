@@ -21,6 +21,7 @@ the character in a level.
 {
   "id": "joshua",
   "name": "Joshua",
+  "style": "blocky",   // blocky (voxel) | rounded (organic spheres/capsules)
   "body": {
     "height": 1.0,   // 0.75..1.35 — also scales the physics capsule
     "width": 1.0,    // 0.75..1.35
@@ -34,7 +35,7 @@ the character in a level.
     "belly":  [0.62, 0.46, 0.30],
     "accent": [0.85, 0.20, 0.25]   // accessory color
   },
-  "accessory": "bowtie",           // none | bowtie | cap | scarf
+  "accessory": "bowtie",           // none | bowtie | cap | scarf | crown | glasses | halo | horns | backpack | wings
   "stats": {           // all 1..10
     "speed": 6,        // → run speed 6.25..13 m/s
     "jump": 6,         // → jump velocity 7.4..11.9 m/s
@@ -80,9 +81,13 @@ browser-local Anthropic API key (same panel).
 
 ## The 3D rig
 
-`src/character/rig.ts` builds ~20 boxes (body, head, ears, muzzle, eyes,
+`src/character/rig.ts` builds ~20 parts (body, head, ears, muzzle, eyes,
 jointed arms/legs, feet, accessory) sized by the morphs and colored by the
-palette. Poses are procedural: run swings limbs with travel speed, jump tucks,
-fall spreads, dash leans, pound stars, glide T-poses — smoothly blended each
-frame. The same rig is the designer preview, the Test Drive body, and the
-in-level player avatar.
+palette, in one of two **styles**: `blocky` (voxel boxes) or `rounded`
+(spheres + capsules, organic Fall-Guys energy). Poses are procedural: run
+swings limbs with travel speed, jump tucks, fall spreads, dash leans, pound
+stars, glide T-poses — smoothly blended each frame. The same rig is the
+designer preview, the Test Drive body, and the in-level player avatar.
+
+**Accessories**: bow tie, cap, scarf, crown, glasses, halo (glows), horns,
+backpack, wings — all colored by the accessory color, working in both styles.

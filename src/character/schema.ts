@@ -29,7 +29,33 @@ export interface CharacterColors {
   accent: Vec3;
 }
 
-export type Accessory = "none" | "bowtie" | "cap" | "scarf";
+export type Accessory =
+  | "none"
+  | "bowtie"
+  | "cap"
+  | "scarf"
+  | "crown"
+  | "glasses"
+  | "halo"
+  | "horns"
+  | "backpack"
+  | "wings";
+
+export const ACCESSORIES: Array<{ key: Accessory; label: string }> = [
+  { key: "none", label: "None" },
+  { key: "bowtie", label: "Bow tie" },
+  { key: "cap", label: "Cap" },
+  { key: "scarf", label: "Scarf" },
+  { key: "crown", label: "Crown" },
+  { key: "glasses", label: "Glasses" },
+  { key: "halo", label: "Halo" },
+  { key: "horns", label: "Horns" },
+  { key: "backpack", label: "Backpack" },
+  { key: "wings", label: "Wings" },
+];
+
+/** Body construction style: chunky voxel boxes vs organic spheres/capsules. */
+export type BodyStyle = "blocky" | "rounded";
 
 /** All stats 1..10. Speed/jump drive movement now; attack/defense are stored for combat. */
 export interface CharacterStats {
@@ -59,6 +85,8 @@ export const MOVES: MoveDef[] = [
 export interface CharacterData {
   id: string;
   name: string;
+  /** Rig construction style; default "blocky". */
+  style?: BodyStyle;
   body: CharacterBody;
   colors: CharacterColors;
   accessory: Accessory;
@@ -88,6 +116,7 @@ export const PRESETS: CharacterData[] = [
   {
     id: "scout",
     name: "Scout",
+    style: "rounded",
     body: { height: 0.85, width: 0.85, weight: 0.15, head: 1.1, ears: 1.4 },
     colors: {
       fur: [0.35, 0.55, 0.6],
@@ -136,12 +165,13 @@ export function normalizeCharacter(raw: unknown): CharacterData {
   const moves = (Array.isArray(r.moves) ? r.moves : JOSHUA.moves).filter((m): m is MoveKey =>
     moveKeys.has(m as MoveKey),
   );
-  const acc: Accessory = ["none", "bowtie", "cap", "scarf"].includes(r.accessory as string)
+  const acc: Accessory = ACCESSORIES.some((a) => a.key === r.accessory)
     ? (r.accessory as Accessory)
     : "none";
   return {
     id: typeof r.id === "string" && r.id ? r.id : `c${Date.now().toString(36)}`,
     name: typeof r.name === "string" && r.name ? r.name : "Unnamed",
+    style: r.style === "rounded" ? "rounded" : "blocky",
     body: {
       height: clamp(body.height, 0.75, 1.35, 1),
       width: clamp(body.width, 0.75, 1.35, 1),

@@ -8,7 +8,7 @@
 // model can only ever produce things the engine already knows how to apply.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { MOVES, normalizeCharacter, type CharacterData } from "../character/schema";
+import { ACCESSORIES, MOVES, normalizeCharacter, type CharacterData } from "../character/schema";
 import { allPrefabs } from "../world/prefabs";
 import type { ContinentData } from "../world/schema";
 import type { LevelOp } from "./ops";
@@ -49,9 +49,14 @@ const VEC3 = { type: "array", items: { type: "number" }, description: "RGB, each
 const CHARACTER_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["name", "body", "colors", "accessory", "stats", "moves"],
+  required: ["name", "style", "body", "colors", "accessory", "stats", "moves"],
   properties: {
     name: { type: "string" },
+    style: {
+      type: "string",
+      enum: ["blocky", "rounded"],
+      description: "Body construction: chunky voxel boxes vs organic spheres/capsules",
+    },
     body: {
       type: "object",
       additionalProperties: false,
@@ -70,7 +75,7 @@ const CHARACTER_SCHEMA = {
       required: ["fur", "muzzle", "belly", "accent"],
       properties: { fur: VEC3, muzzle: VEC3, belly: VEC3, accent: VEC3 },
     },
-    accessory: { type: "string", enum: ["none", "bowtie", "cap", "scarf"] },
+    accessory: { type: "string", enum: ACCESSORIES.map((a) => a.key) },
     stats: {
       type: "object",
       additionalProperties: false,
@@ -127,9 +132,11 @@ export async function generateCharacter(
     max_tokens: 4096,
     thinking: { type: "adaptive" },
     system:
-      "You design characters for a cute 3D platformer. Characters are blocky 3D mascots built " +
-      "from parameters: body morphs (height/width/weight/head/ears), four colors, an accessory, " +
-      "stats 1-10, and equipped special moves " +
+      "You design characters for a cute 3D platformer. Characters are 3D mascots built from " +
+      "parameters: a body style (blocky voxel or rounded organic — pick whichever fits the " +
+      "fantasy, e.g. robots/golems blocky, animals/blobs rounded), body morphs " +
+      "(height/width/weight/head/ears), four colors, an accessory " +
+      `(${ACCESSORIES.map((a) => a.key).join("/")}), stats 1-10, and equipped special moves ` +
       `(${MOVES.map((m) => `${m.key}: ${m.desc}`).join(" · ")}). ` +
       "The user describes a new character or an adjustment to the CURRENT one; if it reads as an " +
       "adjustment, keep everything they didn't mention. When an image is attached, translate it " +

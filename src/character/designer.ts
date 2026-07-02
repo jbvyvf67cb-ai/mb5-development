@@ -14,8 +14,8 @@ import {
 } from "../editor/widgets";
 import { buildAssistPanel } from "../ai/panel";
 import {
-  cloneCharacter, deriveMovement, MOVES, normalizeCharacter,
-  type Accessory, type CharacterData,
+  ACCESSORIES, cloneCharacter, deriveMovement, MOVES, normalizeCharacter,
+  type Accessory, type BodyStyle, type CharacterData,
 } from "./schema";
 import { CharacterRig, type RigPose } from "./rig";
 import {
@@ -417,6 +417,16 @@ export class DesignerMode {
     }, box).input.style.cssText += "font:700 14px system-ui;padding:6px 8px";
 
     heading("Body", box);
+    selectField(
+      "Style",
+      [
+        { value: "blocky", label: "Blocky (voxel)" },
+        { value: "rounded", label: "Rounded (organic)" },
+      ],
+      c.style ?? "blocky",
+      (v) => this.edit((cc) => (cc.style = v as BodyStyle)),
+      box,
+    );
     const b = c.body;
     slider("Height", 0.75, 1.35, 0.01, b.height, (v) => this.edit((cc) => (cc.body.height = v)), box);
     slider("Width", 0.75, 1.35, 0.01, b.width, (v) => this.edit((cc) => (cc.body.width = v)), box);
@@ -432,12 +442,7 @@ export class DesignerMode {
     colorField("Accessory", c.colors.accent, (v) => this.edit((cc) => (cc.colors.accent = v)), box);
     selectField(
       "Accessory",
-      [
-        { value: "none", label: "None" },
-        { value: "bowtie", label: "Bow tie" },
-        { value: "cap", label: "Cap" },
-        { value: "scarf", label: "Scarf" },
-      ],
+      ACCESSORIES.map((a) => ({ value: a.key, label: a.label })),
       c.accessory,
       (v) => this.edit((cc) => (cc.accessory = v as Accessory)),
       box,

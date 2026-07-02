@@ -4,7 +4,7 @@
 // around the level with a follow camera and kill-plane respawn. Tab toggles.
 
 import type { ArcRotateCamera, Mesh, Scene, StandardMaterial, Texture } from "@babylonjs/core";
-import { Color3, MeshBuilder, StandardMaterial as StdMat, Texture as Tex, Vector3 } from "@babylonjs/core";
+import { Color3, MeshBuilder, Ray, StandardMaterial as StdMat, Texture as Tex, Vector3 } from "@babylonjs/core";
 import type { GameState } from "./game/state";
 import type { ContinentData } from "./world/schema";
 import { DEFAULT_PALETTE } from "./world/schema";
@@ -40,6 +40,7 @@ export class App {
   private savedCam?: { alpha: number; beta: number; radius: number; target: Vector3 };
   private designSpawn = new Vector3(0, 503, 0);
   private designKillY = 488;
+  private desiredCamRadius = 11.5;
   private camera: ArcRotateCamera;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private historyChanged = () => {
@@ -180,6 +181,7 @@ export class App {
       while (d < -Math.PI) d += Math.PI * 2;
       this.camera.alpha += d * Math.min(1, dt * 3);
       this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, 1, 0);
+      this.collideCamera(dt);
 
       this.avatar?.update(dt, this.camera);
       if (this.mode === "designtest") {
@@ -193,6 +195,31 @@ export class App {
     }
     // Distance-cull only while playing; the editor must always show everything.
     if (this.mode === "play") this.world.updateCulling(this.camera.position);
+  }
+
+  /**
+   * Physics-aware chase camera: cast from the look target back toward the
+   * camera; if a wall/hill is in the way, pull the camera in front of it
+   * (snappy), then ease back out to the desired distance when clear.
+   */
+  private collideCamera(dt: number) {
+    const target = this.camera.target;
+    const toCam = this.camera.position.subtract(target);
+    const len = toCam.length();
+    if (len < 0.05) return;
+    toCam.scaleInPlace(1 / len);
+    const ray = new Ray(target, toCam, this.desiredCamRadius + 0.5);
+    const capsule = this.player?.capsule;
+    const hit = this.scene.pickWithRay(
+      ray,
+      (m) => m.isPickable && m !== capsule && !m.name.startsWith("entity:"),
+    );
+    const want =
+      hit?.hit && hit.distance > 0.1
+        ? Math.max(2.2, Math.min(this.desiredCamRadius, hit.distance * 0.92))
+        : this.desiredCamRadius;
+    const k = want < this.camera.radius ? 25 : 3; // snap in, ease out
+    this.camera.radius += (want - this.camera.radius) * Math.min(1, dt * k);
   }
 
   // --- level properties (from the editor UI) ---
@@ -335,6 +362,7 @@ export class App {
     this.input.attach();
     this.hud.setCharacter(ch);
     this.hud.show();
+    this.desiredCamRadius = 10.5;
     this.camera.radius = 10.5;
     this.camera.beta = 1.05;
     this.camera.target.copyFrom(spawn);
@@ -444,6 +472,7 @@ export class App {
     this.hud.setCharacter(character);
     this.hud.show();
     this.camera.target.copyFrom(this.player.position);
+    this.desiredCamRadius = 11.5;
     this.camera.radius = 11.5;
     this.camera.beta = 1.05;
     const player = this.player;
