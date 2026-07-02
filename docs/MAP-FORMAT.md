@@ -30,7 +30,16 @@ editor. It is intentionally simple and flat so it is easy to generate.
     "bounds": { "min": [-65,-25,-65], "max": [65,45,65] }, // encloses everything
     "gravity": [0,-16,0],            // optional, this is the default
     "killPlaneY": -40,               // optional; fall below = respawn
-    "seaLevel": 0                    // optional; renders a translucent water plane at this Y
+    "seaLevel": 0,                   // optional; renders a translucent water plane at this Y
+    "env": {                         // optional aesthetics — all fields optional (see Style tab)
+      "sky": [0.4,0.66,0.9],         // background color
+      "horizon": [0.5,0.45,0.38],    // ground-bounce tint of the sky light
+      "fogColor": [0.75,0.85,0.95], "fogDensity": 0.0012,   // 0 disables fog
+      "sunColor": [1,0.98,0.92], "sunIntensity": 1.4,
+      "sunAzimuth": 240, "sunElevation": 55,                // degrees
+      "ambient": 0.55,
+      "waterColor": [0.1,0.42,0.58], "waterOpacity": 0.62
+    }
   },
   "terrain": { /* optional heightmap, see below */ },
   "prefabs":  [ /* placed 3D building blocks */ ],
@@ -46,17 +55,24 @@ A row-major grid of height samples over an XZ rectangle.
   "size": [120, 120],         // world extent on X and Z (meters)
   "resolution": [41, 41],     // [cols(X), rows(Z)]; heights.length === cols*rows
   "heights": [ /* cols*rows floats, row-major: index = r*cols + c */ ],
-  "origin": [-60, -60]        // optional; world XZ of the grid's min corner
+  "origin": [-60, -60],       // optional; world XZ of the grid's min corner
                               // (defaults to centering the grid on the origin)
+  "palette": [                // optional elevation color ramp (editable in Style tab)
+    { "h": 0.4, "color": [0.78,0.72,0.5] },
+    { "h": 3,   "color": [0.42,0.6,0.32] },
+    { "h": 30,  "color": [0.93,0.93,0.96] }
+  ]
 }
 ```
 - Height of cell (c, r) is `heights[r*cols + c]` meters.
 - 41×41 over 120 m ≈ a 3 m grid — plenty for gentle terrain; bump resolution for
-  finer hills.
-- Terrain is auto-colored by elevation (sand → grass → rock → snow). Set
-  `meta.seaLevel` to flood everything below it with a translucent ocean — so a
-  heightmap of raised landmasses over a sea reads as a world map. The Joshua-style
-  offline-bake script for the hand-drawn world is `tools/gen-map.mjs`.
+  finer hills (the Level tab can resample an existing terrain to any size/grid).
+- Terrain is auto-colored by elevation (default: sand → grass → rock → snow;
+  override with `palette`). Set `meta.seaLevel` to flood everything below it
+  with a translucent ocean — so a heightmap of raised landmasses over a sea
+  reads as a world map. Offline-bake scripts: `tools/gen-map.mjs` (the full
+  hand-drawn world), `tools/gen-slice.mjs` (the southern-continent movement
+  playground), both built on the shared traced geography in `tools/maplib.mjs`.
 
 ### prefabs (true-3D building blocks)
 Each entry is one placed instance. Unit prefab meshes are scaled/rotated/moved by
@@ -88,7 +104,18 @@ place; reuse it as a sensible starting size when converting:
 | `stairs`   | staircase (rises along +Z)    | mesh             | `[4, 3, 5]`    |
 | `pillar`   | cylinder                      | cylinder         | `[1.5, 4, 1.5]`|
 | `cone`     | cone                          | mesh             | `[2.5, 4, 2.5]`|
+| `gate`     | archway (legs + lintel)       | mesh             | `[6, 6, 1.2]`  |
+| `dome`     | hemisphere                    | mesh             | `[6, 3, 6]`    |
+| `bridge`   | deck + side rails             | mesh             | `[3, 2, 8]`    |
+| `tree`     | blocky leaf tree (two-tone)   | box              | `[4, 7, 4]`    |
+| `pine`     | stepped pine (two-tone)       | box              | `[3.5, 8, 3.5]`|
+| `rock`     | jittered low-poly boulder     | mesh             | `[2.5, 2, 2.5]`|
+| `bush`     | squashed sphere               | sphere           | `[2, 1.4, 2]`  |
+| `crystal`  | glowing octahedron            | box              | `[1.4, 3, 1.4]`|
 | `ball`     | sphere (prop)                 | sphere           | `[2, 2, 2]`    |
+| `crate`    | cube (prop)                   | box              | `[2, 2, 2]`    |
+| `fence`    | posts + rails                 | box              | `[4, 1.6, 0.3]`|
+| `ring`     | glowing torus                 | mesh             | `[4, 4, 4]`    |
 
 - A `ramp` rises from its low edge (−Z) to its high edge (+Z); rotate via
   `rot[1]` (Y) to point it. `scale = [width, rise, run]`.

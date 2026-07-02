@@ -318,8 +318,8 @@ export class App {
     this.hud.setCharacter(character);
     this.hud.show();
     this.camera.target.copyFrom(this.player.position);
-    this.camera.radius = 14;
-    this.camera.beta = 1.1;
+    this.camera.radius = 11.5;
+    this.camera.beta = 1.05;
     const player = this.player;
     const w = window as unknown as Record<string, unknown>;
     w.__player = player;

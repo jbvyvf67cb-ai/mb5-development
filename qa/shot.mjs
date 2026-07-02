@@ -50,8 +50,8 @@ for (const a of actions) {
   }
 }
 
-// Give physics a moment to settle.
-await page.waitForTimeout(1500);
+// Give physics a moment to settle (5th CLI arg overrides, ms).
+await page.waitForTimeout(process.argv[5] ? parseInt(process.argv[5], 10) : 1500);
 
 const telemetry = ready ? await page.evaluate(() => window.__telemetry()) : null;
 await page.screenshot({ path: out });

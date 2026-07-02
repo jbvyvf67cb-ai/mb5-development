@@ -19,43 +19,73 @@ Other scripts: `npm run build` (type-check + bundle), `npm run preview`
 (serve the build), `npm run shot -- <url> <out.png>` (headless screenshot +
 telemetry for QA).
 
-## The map maker
+## The three modes
 
-Boots into **Edit mode**. Press **Tab** to **Play** (walk the level you built).
+**Build** (the map maker) · **Characters** (the sprite designer) · **Play**
+(Tab or ▶). Switch Build/Characters in the top bar.
+
+### Build — the map maker
+
+Studio layout: top bar (file ops, Publish, undo/redo, Play), left tool rail +
+contextual panel, right **Inspector | Level | Style** tabs, status bar
+(`?` shows all shortcuts).
 
 **Tools** (keys `1`–`4`): **Select** · **Place** · **Sculpt** · **Entity**
-- **Select** — click an object; move/rotate/scale gizmos (`Q`/`W`/`E`); the
-  inspector edits position/rotation/scale, tint, and collider; `F` focuses it.
-- **Place** — pick a prefab (platform, block, wall, ramp, stairs, pillar, cone,
-  ball) and click a surface to drop it.
-- **Sculpt** — heightmap brushes (raise / lower / smooth / flatten) with
-  radius + strength.
-- **Entity** — drop gameplay markers (player spawn, coin, checkpoint, enemy).
+- **Select** — click an object; gizmos (`Q`/`W`/`E`); inspector edits
+  transform/tint/collider; `F` focus, `Ctrl+D` duplicate, `Del` delete;
+  snap with per-step settings.
+- **Place** — searchable, categorized prefab palette (structure / nature /
+  props: platforms, walls, ramps, stairs, gate, dome, bridge, trees, pines,
+  rocks, crystals, fences, rings…), click a surface to drop.
+- **Sculpt** — raise / lower / smooth / flatten with a brush-radius ring
+  preview.
+- **Entity** — gameplay markers (spawn, coin, checkpoint, enemy).
 
-**Editing**: **Undo/Redo** (`Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`),
-**Duplicate** (`Ctrl+D`), **Delete** (`Del`), **Snap to grid**.
+**Level tab**: name, gravity, kill-plane, **sea level (ocean plane)**, terrain
+**resize/resample**, Ref Image underlay (trace a hand-drawn map).
+**Style tab** — full aesthetic control: presets (Day/Sunset/Night/Alien), sky &
+horizon colors, sun color/intensity/direction, ambient, fog, water color +
+opacity, and an editable **terrain elevation palette** (add/remove color
+stops). Everything applies live and saves into the level.
 
-**Level**: name, gravity, kill-plane, New Flat Terrain, **New Level**,
-**Load Demo**, and a **Ref Image** underlay (drop a scanned hand-drawn map in
-as a flat, opacity-adjustable tracing aid). **Save** downloads JSON; **Load**
-opens it. Work **autosaves** to the browser and restores on reload.
+Work **autosaves**; **Save/Open** round-trips JSON; **Publish** writes to the
+repo (see below).
 
-**Play mode**: WASD move, Space to jump (double-jump in air), chase camera,
-collect coins, checkpoints set respawn, falling respawns you. Tab returns to
-editing.
+### Characters — the designer
+
+Sprite-based characters, fully customizable (see `docs/CHARACTERS.md`):
+body sliders (height/width/weight/head/ears) that reshape the procedural
+pixel sprite *and* the physics capsule, colors + accessory, stat sliders
+(speed/jump/attack/defense) with live-derived movement numbers, and a
+special-move loadout (double jump, dash, glide, ground pound, wall jump).
+Presets: **Joshua** the bear, Scout, Boulder. **Use in Play** sets who you
+spawn as; characters autosave and import/export as JSON.
+
+### Play
+
+WASD move, Space jump (+ the moves your character owns: `Shift` dash,
+hold-Space glide, `C` ground pound, wall jump), chase camera, coins,
+checkpoints, kill-plane respawn. Tab returns to editing.
+
+**Try the movement playground:** `?level=./continents/joshua-slice.json` —
+the hand-drawn world's southern continent as a course that exercises every
+move (coin trail up the mountain, dash bay over water, wall-jump chimney,
+pound crates, glide descent).
 
 ## Project layout
 
 ```
 src/
   core/      engine boot, input, debug surface (window.__*)
-  world/     ContinentData schema, prefab library, terrain, the World runtime
-  editor/    Editor (tools/gizmos/sculpt), command history, DOM UI
-  player/    capsule controller (Play mode)
-  game/      event-bus state, PlaySession (coins/checkpoints)
+  world/     ContinentData schema, prefab library, terrain, env, the World runtime
+  editor/    Editor (tools/gizmos/sculpt), command history, widgets + studio UI
+  character/ CharacterData schema, procedural sprite, roster store, designer
+  player/    capsule controller (stats + special moves), sprite avatar
+  game/      event-bus state, PlaySession (coins/checkpoints/shockwaves)
   ui/        HUD
-  app.ts     ties world + editor + play together
-docs/        JOSHUA-* notes, MAP-FORMAT.md (the level format + import flow)
+  app.ts     ties world + editor + designer + play together
+tools/       maplib.mjs (traced world geography), gen-map.mjs, gen-slice.mjs
+docs/        JOSHUA-* notes, MAP-FORMAT.md, CHARACTERS.md
 qa/          shot.mjs headless harness
 ```
 
