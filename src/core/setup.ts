@@ -53,9 +53,12 @@ export async function bootEngine(canvas: HTMLCanvasElement): Promise<BootResult>
   );
   camera.attachControl(canvas, true);
   camera.lowerRadiusLimit = 6;
-  camera.upperRadiusLimit = 400;
+  camera.upperRadiusLimit = 500;
   camera.maxZ = 2000;
   camera.wheelDeltaPercentage = 0.01;
+  // Right-drag (or ctrl+drag) pans; default sensibility is far too slow for a
+  // world-scale editor.
+  camera.panningSensibility = 40;
 
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
   hemi.intensity = 0.55;

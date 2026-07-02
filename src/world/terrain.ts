@@ -7,7 +7,7 @@
 
 import { Mesh, VertexData } from "@babylonjs/core";
 import type { Scene } from "@babylonjs/core";
-import type { TerrainData } from "./schema";
+import { DEFAULT_PALETTE, type PaletteStop, type TerrainData } from "./schema";
 
 export interface TerrainMesh {
   mesh: Mesh;
@@ -37,25 +37,19 @@ export interface TerrainGeometry {
   colors: number[];
 }
 
-/** Elevation → RGB ramp: sand → grass → rock → snow (smoothly blended). */
-export function elevationColor(h: number): [number, number, number] {
-  const stops: Array<[number, [number, number, number]]> = [
-    [0.4, [0.78, 0.72, 0.5]], // sand
-    [3, [0.42, 0.6, 0.32]], // coastal grass
-    [12, [0.24, 0.46, 0.24]], // green
-    [22, [0.45, 0.4, 0.34]], // rock
-    [30, [0.93, 0.93, 0.96]], // snow
-  ];
-  if (h <= stops[0][0]) return stops[0][1];
+/** Elevation → RGB via a stop ramp (smoothly blended between stops). */
+export function elevationColor(h: number, stops: PaletteStop[] = DEFAULT_PALETTE): [number, number, number] {
+  if (!stops.length) return [1, 1, 1];
+  if (h <= stops[0].h) return [...stops[0].color];
   for (let i = 1; i < stops.length; i++) {
-    if (h <= stops[i][0]) {
-      const [h0, c0] = stops[i - 1];
-      const [h1, c1] = stops[i];
-      const t = (h - h0) / (h1 - h0);
+    if (h <= stops[i].h) {
+      const { h: h0, color: c0 } = stops[i - 1];
+      const { h: h1, color: c1 } = stops[i];
+      const t = h1 > h0 ? (h - h0) / (h1 - h0) : 1;
       return [c0[0] + (c1[0] - c0[0]) * t, c0[1] + (c1[1] - c0[1]) * t, c0[2] + (c1[2] - c0[2]) * t];
     }
   }
-  return stops[stops.length - 1][1];
+  return [...stops[stops.length - 1].color];
 }
 
 /** Compute terrain vertex data from the height grid (shared by build + sculpt refresh). */
@@ -71,12 +65,13 @@ export function terrainGeometry(data: TerrainData): TerrainGeometry {
   const indices: number[] = [];
   const colors: number[] = [];
 
+  const palette = data.palette ?? DEFAULT_PALETTE;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const h = heightAt(data, c, r);
       positions.push(origin[0] + c * cellX, h, origin[1] + r * cellZ);
       uvs.push(c / Math.max(1, cols - 1), r / Math.max(1, rows - 1));
-      const col = elevationColor(h);
+      const col = elevationColor(h, palette);
       colors.push(col[0], col[1], col[2], 1);
     }
   }

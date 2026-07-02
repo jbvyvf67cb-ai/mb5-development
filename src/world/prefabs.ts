@@ -15,13 +15,15 @@ import type { ColliderKind, Vec3 } from "./schema";
 export interface PrefabDef {
   key: string;
   label: string;
-  category: "structure" | "terrainpiece" | "prop";
+  category: "structure" | "nature" | "prop";
   /** Default physics collider for instances of this prefab. */
   collider: Exclude<ColliderKind, "auto">;
   /** Base color (RGB 0..1); instance tint multiplies this. */
   baseColor: Vec3;
   /** Sensible default scale when first placed in the editor. */
   defaultScale: Vec3;
+  /** Emissive strength 0..1 (glowing props like crystals/rings). */
+  glow?: number;
   /** Build a fresh unit-sized mesh (no material/transform applied yet). */
   build: (scene: Scene, name: string) => Mesh;
 }
@@ -60,6 +62,77 @@ function buildStairs(scene: Scene, name: string): Mesh {
     b.box(new Vector3(0, top / 2, z), new Vector3(1, top, depth));
   }
   return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Archway/gate: two legs + lintel, unit cube envelope (centered). */
+function buildGate(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  b.box(new Vector3(-0.4, -0.1, 0), new Vector3(0.2, 0.8, 1));
+  b.box(new Vector3(0.4, -0.1, 0), new Vector3(0.2, 0.8, 1));
+  b.box(new Vector3(0, 0.4, 0), new Vector3(1, 0.2, 1));
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Bridge segment: deck + low side rails, centered. */
+function buildBridge(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  b.box(new Vector3(0, -0.42, 0), new Vector3(1, 0.16, 1));
+  b.box(new Vector3(-0.46, -0.2, 0), new Vector3(0.08, 0.3, 1));
+  b.box(new Vector3(0.46, -0.2, 0), new Vector3(0.08, 0.3, 1));
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Fence: posts + two rails across X, thin on Z, centered. */
+function buildFence(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  for (const x of [-0.48, 0, 0.48]) b.box(new Vector3(x, 0, 0), new Vector3(0.08, 1, 0.08));
+  b.box(new Vector3(0, 0.28, 0), new Vector3(1, 0.1, 0.05));
+  b.box(new Vector3(0, -0.12, 0), new Vector3(1, 0.1, 0.05));
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Blocky voxel tree with baked two-tone vertex colors (trunk + canopy). */
+function buildTree(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  const trunk = [0.45, 0.3, 0.18, 1];
+  const leaf = [0.22, 0.5, 0.2, 1];
+  const leafHi = [0.3, 0.62, 0.26, 1];
+  b.box(new Vector3(0, -0.3, 0), new Vector3(0.16, 0.4, 0.16), 0, trunk);
+  b.box(new Vector3(0, 0.05, 0), new Vector3(0.7, 0.36, 0.7), 0, leaf);
+  b.box(new Vector3(0, 0.35, 0), new Vector3(0.44, 0.26, 0.44), 0, leafHi);
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Stepped pine: trunk + three shrinking tiers, baked colors. */
+function buildPine(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  const trunk = [0.42, 0.28, 0.16, 1];
+  const dark = [0.14, 0.36, 0.2, 1];
+  const mid = [0.18, 0.44, 0.24, 1];
+  b.box(new Vector3(0, -0.42, 0), new Vector3(0.14, 0.16, 0.14), 0, trunk);
+  b.box(new Vector3(0, -0.2, 0), new Vector3(0.72, 0.28, 0.72), 0, dark);
+  b.box(new Vector3(0, 0.08, 0), new Vector3(0.5, 0.28, 0.5), 0, mid);
+  b.box(new Vector3(0, 0.34, 0), new Vector3(0.28, 0.24, 0.28), 0, dark);
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Low-poly rock: icosphere with deterministic vertex jitter. */
+function buildRock(scene: Scene, name: string): Mesh {
+  const m = MeshBuilder.CreateIcoSphere(name, { radius: 0.5, subdivisions: 2 }, scene);
+  const pos = m.getVerticesData("position");
+  if (pos) {
+    for (let i = 0; i < pos.length; i += 3) {
+      // deterministic pseudo-noise from vertex position
+      const h = Math.sin(pos[i] * 12.9898 + pos[i + 1] * 78.233 + pos[i + 2] * 37.719) * 43758.5453;
+      const f = 1 + ((h - Math.floor(h)) - 0.5) * 0.45;
+      pos[i] *= f;
+      pos[i + 1] *= f * 0.85; // slightly squashed
+      pos[i + 2] *= f;
+    }
+    m.updateVerticesData("position", pos);
+    m.createNormals(false);
+  }
+  return m;
 }
 
 const DEFS: Record<string, PrefabDef> = {
@@ -127,6 +200,79 @@ const DEFS: Record<string, PrefabDef> = {
     build: (s, n) =>
       MeshBuilder.CreateCylinder(n, { diameterTop: 0, diameterBottom: 1, height: 1, tessellation: 18 }, s),
   },
+  gate: {
+    key: "gate",
+    label: "Gate",
+    category: "structure",
+    collider: "mesh",
+    baseColor: [0.68, 0.62, 0.52],
+    defaultScale: [6, 6, 1.2],
+    build: buildGate,
+  },
+  dome: {
+    key: "dome",
+    label: "Dome",
+    category: "structure",
+    collider: "mesh",
+    baseColor: [0.75, 0.72, 0.66],
+    defaultScale: [6, 3, 6],
+    build: (s, n) => MeshBuilder.CreateSphere(n, { diameter: 1, segments: 16, slice: 0.5 }, s),
+  },
+  bridge: {
+    key: "bridge",
+    label: "Bridge",
+    category: "structure",
+    collider: "mesh",
+    baseColor: [0.55, 0.42, 0.3],
+    defaultScale: [3, 2, 8],
+    build: buildBridge,
+  },
+  tree: {
+    key: "tree",
+    label: "Tree",
+    category: "nature",
+    collider: "box",
+    baseColor: [1, 1, 1], // colors baked in vertices; tint still multiplies
+    defaultScale: [4, 7, 4],
+    build: buildTree,
+  },
+  pine: {
+    key: "pine",
+    label: "Pine",
+    category: "nature",
+    collider: "box",
+    baseColor: [1, 1, 1],
+    defaultScale: [3.5, 8, 3.5],
+    build: buildPine,
+  },
+  rock: {
+    key: "rock",
+    label: "Rock",
+    category: "nature",
+    collider: "mesh",
+    baseColor: [0.52, 0.5, 0.48],
+    defaultScale: [2.5, 2, 2.5],
+    build: buildRock,
+  },
+  bush: {
+    key: "bush",
+    label: "Bush",
+    category: "nature",
+    collider: "sphere",
+    baseColor: [0.3, 0.55, 0.28],
+    defaultScale: [2, 1.4, 2],
+    build: (s, n) => MeshBuilder.CreateSphere(n, { diameter: 1, segments: 10 }, s),
+  },
+  crystal: {
+    key: "crystal",
+    label: "Crystal",
+    category: "nature",
+    collider: "box",
+    baseColor: [0.45, 0.85, 0.95],
+    defaultScale: [1.4, 3, 1.4],
+    glow: 0.55,
+    build: (s, n) => MeshBuilder.CreatePolyhedron(n, { type: 1, size: 0.5 }, s),
+  },
   ball: {
     key: "ball",
     label: "Ball",
@@ -135,6 +281,34 @@ const DEFS: Record<string, PrefabDef> = {
     baseColor: [0.85, 0.5, 0.3],
     defaultScale: [2, 2, 2],
     build: (s, n) => MeshBuilder.CreateSphere(n, { diameter: 1, segments: 20 }, s),
+  },
+  crate: {
+    key: "crate",
+    label: "Crate",
+    category: "prop",
+    collider: "box",
+    baseColor: [0.72, 0.55, 0.34],
+    defaultScale: [2, 2, 2],
+    build: (s, n) => MeshBuilder.CreateBox(n, { size: 1 }, s),
+  },
+  fence: {
+    key: "fence",
+    label: "Fence",
+    category: "prop",
+    collider: "box",
+    baseColor: [0.6, 0.48, 0.34],
+    defaultScale: [4, 1.6, 0.3],
+    build: buildFence,
+  },
+  ring: {
+    key: "ring",
+    label: "Ring",
+    category: "prop",
+    collider: "mesh",
+    baseColor: [1, 0.8, 0.25],
+    defaultScale: [4, 4, 4],
+    glow: 0.4,
+    build: (s, n) => MeshBuilder.CreateTorus(n, { diameter: 1, thickness: 0.12, tessellation: 20 }, s),
   },
 };
 

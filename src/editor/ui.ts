@@ -1,13 +1,20 @@
-// Editor UI — a DOM control panel overlaying the canvas.
+// Editor UI — the map maker's chrome (framework-free DOM).
 //
-// Tools, transform gizmos, prefab/entity palettes, sculpt brush, snap,
-// undo/redo/duplicate, save/load, and an editable selection inspector
-// (numeric transform + tint + collider). Framework-free plain DOM.
+// Layout: a top bar (file ops, undo/redo, mode switch, Play), a left tool rail
+// with a contextual options panel (prefab palette w/ search, sculpt brushes,
+// entity palette, gizmo+snap), a right tabbed panel (Inspector | Level | Style)
+// and a bottom status bar. Style tab = full aesthetic control (sky/fog/sun/
+// water/terrain palette). All widgets come from widgets.ts.
 
-import type { ColliderKind, ContinentData, Vec3 } from "../world/schema";
+import type { ColliderKind, ContinentData, EnvSettings, PaletteStop, Vec3 } from "../world/schema";
+import { DEFAULT_PALETTE } from "../world/schema";
 import { allPrefabs } from "../world/prefabs";
 import type { BrushMode, Editor, GizmoMode, Selection, Tool } from "./editor";
-import { loadConfig, loadToken, publishLevel, saveConfig, saveToken, type PublishConfig } from "./publish";
+import { loadConfig, loadToken, publishLevel, saveConfig, saveToken } from "./publish";
+import {
+  btn, checkbox, colorField, div, el, heading, hint, injectCss, modal, numField, readVec,
+  rgbToHex, row, selectField, sep, slider, tabbar, textField, toast, txt, vecRow,
+} from "./widgets";
 
 export interface EditorHost {
   editor: Editor;
@@ -17,346 +24,612 @@ export interface EditorHost {
   togglePlay(): void;
   isPlaying(): boolean;
   setMeta(patch: { name?: string; gravityY?: number; killPlaneY?: number }): void;
+  setSeaLevel(v: number | undefined): void;
+  setEnv(patch: Partial<EnvSettings>): void;
+  getEnv(): Required<EnvSettings>;
+  setPalette(stops: PaletteStop[] | undefined): void;
+  getPalette(): PaletteStop[];
+  resizeTerrain(size: [number, number], res: [number, number]): void;
   regenTerrain(resolution: number): void;
   newLevel(): void;
   loadDemo(): void;
   setReferenceImage(file: File): void;
   setReferenceOpacity(v: number): void;
   clearReference(): void;
+  openDesigner(): void;
 }
 
-const ENTITY_TYPES = ["playerSpawn", "coin", "checkpoint", "enemy"];
-const TOOLS: Tool[] = ["select", "place", "sculpt", "entity"];
+const ENTITY_TYPES: Array<{ key: string; label: string; color: string }> = [
+  { key: "playerSpawn", label: "Spawn", color: "#4ade80" },
+  { key: "coin", label: "Coin", color: "#facc15" },
+  { key: "checkpoint", label: "Checkpoint", color: "#60a5fa" },
+  { key: "enemy", label: "Enemy", color: "#f87171" },
+];
+const TOOLS: Array<{ key: Tool; icon: string; label: string; hintText: string }> = [
+  { key: "select", icon: "⌖", label: "Select (1)", hintText: "click to select · Q/W/E gizmo · F focus · Del delete · Ctrl+D duplicate" },
+  { key: "place", icon: "▦", label: "Place (2)", hintText: "click a surface to place the chosen prefab" },
+  { key: "sculpt", icon: "⛰", label: "Sculpt (3)", hintText: "drag on terrain to sculpt · orbit is paused while sculpting" },
+  { key: "entity", icon: "◈", label: "Entity (4)", hintText: "click to drop the chosen gameplay marker" },
+];
 const GIZMOS: GizmoMode[] = ["move", "rotate", "scale"];
 const BRUSHES: BrushMode[] = ["raise", "lower", "smooth", "flatten"];
 const COLLIDERS: ColliderKind[] = ["auto", "box", "sphere", "capsule", "cylinder", "mesh", "none"];
 
+const ENV_PRESETS: Record<string, Partial<EnvSettings>> = {
+  Day: { sky: [0.05, 0.07, 0.11], horizon: [0.18, 0.16, 0.14], fogDensity: 0, sunColor: [1, 0.98, 0.92], sunIntensity: 1.4, sunAzimuth: 240, sunElevation: 55, ambient: 0.55, waterColor: [0.1, 0.32, 0.55], waterOpacity: 0.66, fogColor: [0.55, 0.65, 0.8] },
+  Sunset: { sky: [0.72, 0.38, 0.24], horizon: [0.5, 0.28, 0.22], fogColor: [0.85, 0.55, 0.38], fogDensity: 0.0022, sunColor: [1, 0.68, 0.42], sunIntensity: 1.15, sunAzimuth: 265, sunElevation: 12, ambient: 0.42, waterColor: [0.22, 0.28, 0.48], waterOpacity: 0.7 },
+  Night: { sky: [0.02, 0.03, 0.08], horizon: [0.05, 0.06, 0.12], fogColor: [0.04, 0.07, 0.16], fogDensity: 0.0035, sunColor: [0.6, 0.7, 1], sunIntensity: 0.35, sunAzimuth: 40, sunElevation: 35, ambient: 0.25, waterColor: [0.03, 0.1, 0.22], waterOpacity: 0.75 },
+  Alien: { sky: [0.14, 0.05, 0.2], horizon: [0.2, 0.08, 0.25], fogColor: [0.45, 0.18, 0.55], fogDensity: 0.004, sunColor: [0.9, 0.55, 1], sunIntensity: 1.1, sunAzimuth: 120, sunElevation: 40, ambient: 0.5, waterColor: [0.45, 0.12, 0.42], waterOpacity: 0.6 },
+};
+
 export class EditorUI {
-  root: HTMLDivElement;
   private host: EditorHost;
-  private sections: Record<string, HTMLElement> = {};
-  private inspector: HTMLDivElement;
-  private playBtn: HTMLButtonElement;
+  private chrome: HTMLElement[] = [];
+  private toolPanels: Partial<Record<Tool, HTMLDivElement>> = {};
+  private toolBtns = new Map<Tool, HTMLButtonElement>();
+  private gizmoBtns = new Map<GizmoMode, HTMLButtonElement>();
+  private brushBtns = new Map<BrushMode, HTMLButtonElement>();
+  private inspectorEl!: HTMLDivElement;
+  private levelEl!: HTMLDivElement;
+  private styleEl!: HTMLDivElement;
+  private statusHint!: HTMLElement;
+  private statusStats!: HTMLElement;
   private undoBtn!: HTMLButtonElement;
   private redoBtn!: HTMLButtonElement;
-  private publishEl?: HTMLDivElement;
-  private nameIn!: HTMLInputElement;
-  private gravIn!: HTMLInputElement;
-  private killIn!: HTMLInputElement;
-  private toolBtns = new Map<Tool, HTMLButtonElement>();
+  private playBtn!: HTMLButtonElement;
+  private rightTabs!: { set: (k: string) => void };
 
   constructor(host: EditorHost) {
     this.host = host;
-    this.root = el("div", "mb5-editor");
-    style(this.root, {
-      position: "fixed",
-      top: "10px",
-      left: "10px",
-      width: "240px",
-      maxHeight: "calc(100vh - 20px)",
-      overflowY: "auto",
-      background: "rgba(16,18,26,0.94)",
-      color: "#cdd6f4",
-      font: "13px/1.45 system-ui, sans-serif",
-      padding: "10px",
-      borderRadius: "10px",
-      boxShadow: "0 6px 24px rgba(0,0,0,0.4)",
-      userSelect: "none",
-      zIndex: "10",
+    injectCss();
+    this.buildTopbar();
+    this.buildRail();
+    this.buildToolPanels();
+    this.buildStatusBar(); // before the right panel: its initial render updates the stats line
+    this.buildRightPanel();
+    addEventListener("keydown", (e) => {
+      if (e.key === "?" && !isTyping()) this.showShortcuts();
     });
-
-    const head = el("div");
-    style(head, { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" });
-    head.appendChild(text("strong", "Map Maker"));
-    this.playBtn = button("▶ Play", () => this.host.togglePlay());
-    style(this.playBtn, { background: "#2a6", fontWeight: "600" });
-    head.appendChild(this.playBtn);
-    this.root.appendChild(head);
-
-    // tools
-    this.root.appendChild(this.label("Tool"));
-    const toolRow = row();
-    for (const t of TOOLS) {
-      const b = button(cap(t), () => this.setTool(t));
-      this.toolBtns.set(t, b);
-      toolRow.appendChild(b);
-    }
-    this.root.appendChild(toolRow);
-
-    // edit ops: undo/redo/dup/snap
-    this.root.appendChild(this.label("Edit"));
-    const opsRow = row();
-    this.undoBtn = button("↶ Undo", () => this.host.editor.undo());
-    this.redoBtn = button("↷ Redo", () => this.host.editor.redo());
-    opsRow.appendChild(this.undoBtn);
-    opsRow.appendChild(this.redoBtn);
-    opsRow.appendChild(button("Duplicate", () => this.host.editor.duplicateSelected()));
-    this.root.appendChild(opsRow);
-    this.root.appendChild(checkbox("Snap to grid", false, (v) => this.host.editor.setSnap(v)));
-
-    // gizmo (select)
-    this.sections.gizmo = this.group("Transform");
-    const gizRow = row();
-    for (const m of GIZMOS) gizRow.appendChild(button(cap(m), () => this.host.editor.setGizmoMode(m)));
-    this.sections.gizmo.appendChild(gizRow);
-
-    // prefab palette (place), grouped by category
-    this.sections.place = this.group("Prefab");
-    const byCat = new Map<string, HTMLDivElement>();
-    for (const def of allPrefabs()) {
-      let r = byCat.get(def.category);
-      if (!r) {
-        r = row();
-        byCat.set(def.category, r);
-        this.sections.place.appendChild(r);
-      }
-      r.appendChild(
-        button(def.label, () => {
-          this.host.editor.placePrefab = def.key;
-          this.highlightAcross(this.sections.place, def.label);
-        }),
-      );
-    }
-
-    // entity palette
-    this.sections.entity = this.group("Entity");
-    const eRow = row();
-    for (const t of ENTITY_TYPES) {
-      eRow.appendChild(
-        button(t, () => {
-          this.host.editor.entityType = t;
-          this.highlight(eRow, t);
-        }),
-      );
-    }
-    this.sections.entity.appendChild(eRow);
-
-    // brush (sculpt)
-    this.sections.sculpt = this.group("Brush");
-    const bRow = row();
-    for (const m of BRUSHES)
-      bRow.appendChild(
-        button(cap(m), () => {
-          this.host.editor.brush.mode = m;
-          this.highlight(bRow, cap(m));
-        }),
-      );
-    this.sections.sculpt.appendChild(bRow);
-    this.sections.sculpt.appendChild(
-      slider("Radius", 2, 30, this.host.editor.brush.radius, (v) => (this.host.editor.brush.radius = v)),
-    );
-    this.sections.sculpt.appendChild(
-      slider("Strength", 0.1, 2, this.host.editor.brush.strength, (v) => (this.host.editor.brush.strength = v), 0.1),
-    );
-
-    // level properties
-    this.root.appendChild(this.label("Level"));
-    const meta = this.host.data.meta;
-    this.nameIn = el("input");
-    this.nameIn.type = "text";
-    this.nameIn.value = meta.name;
-    styleInput(this.nameIn);
-    this.nameIn.style.fontSize = "12px";
-    this.nameIn.onchange = () => this.host.setMeta({ name: this.nameIn.value });
-    this.root.appendChild(this.nameIn);
-    const grav = numField("Gravity Y", meta.gravity?.[1] ?? -16, (v) => this.host.setMeta({ gravityY: v }));
-    const kill = numField("Kill plane Y", meta.killPlaneY ?? -40, (v) => this.host.setMeta({ killPlaneY: v }));
-    this.gravIn = grav.querySelector("input")!;
-    this.killIn = kill.querySelector("input")!;
-    this.root.appendChild(grav);
-    this.root.appendChild(kill);
-    const terrRow = row();
-    terrRow.appendChild(button("New Flat Terrain", () => this.host.regenTerrain(41)));
-    this.root.appendChild(terrRow);
-
-    // reference image underlay (tracing aid for hand-drawn maps)
-    const refRow = row();
-    refRow.appendChild(button("Ref Image", () => this.pickReference()));
-    refRow.appendChild(button("Clear Ref", () => this.host.clearReference()));
-    this.root.appendChild(refRow);
-    this.root.appendChild(
-      slider("Ref opacity", 0, 1, 0.6, (v) => this.host.setReferenceOpacity(v), 0.05),
-    );
-
-    // file ops
-    this.root.appendChild(this.label("File"));
-    const fRow = row();
-    fRow.appendChild(button("Save", () => this.save()));
-    fRow.appendChild(button("Load", () => this.load()));
-    fRow.appendChild(button("Reset Cam", () => reframe()));
-    fRow.appendChild(button("New Level", () => {
-      if (confirm("Discard current level and start fresh?")) this.host.newLevel();
-    }));
-    fRow.appendChild(button("Load Demo", () => {
-      if (confirm("Discard current level and load the demo?")) this.host.loadDemo();
-    }));
-    this.root.appendChild(fRow);
-
-    this.buildPublishSection();
-
-    // inspector
-    this.root.appendChild(this.label("Selection"));
-    this.inspector = el("div");
-    style(this.inspector, { minHeight: "20px", color: "#a6adc8" });
-    this.inspector.textContent = "—";
-    this.root.appendChild(this.inspector);
-
-    const help = el("div");
-    style(help, { marginTop: "10px", fontSize: "11px", color: "#7f849c" });
-    help.textContent =
-      "1-4 tools · Q/W/E gizmo · drag=orbit · wheel=zoom\nCtrl+Z/Y undo · Ctrl+D dup · F focus · Del remove\nPlay: WASD+Space, dbl-jump, Tab to exit";
-    this.root.appendChild(help);
-
-    document.body.appendChild(this.root);
-
     this.setTool("select");
     this.setMode(false);
     this.updateHistory();
   }
 
-  private buildPublishSection() {
-    this.root.appendChild(this.label("Publish (GitHub)"));
-    const cfg = loadConfig();
-    const persist = () => saveConfig(cfg);
-
-    const tokIn = el("input");
-    tokIn.type = "password";
-    tokIn.placeholder = "fine-grained PAT (contents: write)";
-    tokIn.value = loadToken();
-    styleInput(tokIn);
-    this.root.appendChild(tokIn);
-    const tokRow = row();
-    tokRow.appendChild(button("Save Token", () => {
-      saveToken(tokIn.value.trim());
-      this.publishStatus("token saved (browser-local)");
-    }));
-    tokRow.appendChild(button("Clear Token", () => {
-      saveToken("");
-      tokIn.value = "";
-      this.publishStatus("token cleared");
-    }));
-    this.root.appendChild(tokRow);
-
-    const mk = (label: string, key: keyof PublishConfig) => {
-      const inp = el("input");
-      inp.type = "text";
-      inp.value = cfg[key];
-      inp.title = label;
-      inp.placeholder = label;
-      styleInput(inp);
-      inp.onchange = () => {
-        cfg[key] = inp.value.trim();
-        persist();
-      };
-      return inp;
-    };
-    this.root.appendChild(mk("owner", "owner"));
-    this.root.appendChild(mk("repo", "repo"));
-    this.root.appendChild(mk("branch", "branch"));
-    this.root.appendChild(mk("dir", "dir"));
-
-    const pubBtn = button("Publish to GitHub", async () => {
-      pubBtn.disabled = true;
-      this.publishStatus("publishing…");
-      const res = await publishLevel(this.host.getData(), cfg, tokIn.value.trim());
-      this.publishStatus(res.ok ? `✓ ${res.message}` : `✗ ${res.message}`, res.ok);
-      pubBtn.disabled = false;
+  // ------------------------------------------------- top bar
+  private buildTopbar() {
+    const bar = div("mb5 mb5-panel");
+    Object.assign(bar.style, {
+      position: "fixed", top: "8px", left: "10px", right: "10px", height: "42px",
+      display: "flex", alignItems: "center", gap: "6px", padding: "0 10px", zIndex: "20",
     });
-    style(pubBtn, { background: "#3a5", marginTop: "4px" });
-    this.root.appendChild(pubBtn);
+    const brand = txt("div", "MB5", "", bar);
+    Object.assign(brand.style, { font: "800 15px system-ui", color: "#89b4fa", letterSpacing: ".04em" });
+    txt("span", "Studio", "", bar).style.cssText = "font:600 12px system-ui;color:#6c7391;margin-right:8px";
 
-    this.publishEl = el("div");
-    style(this.publishEl, { fontSize: "11px", color: "#7f849c", marginTop: "4px", wordBreak: "break-word" });
-    this.root.appendChild(this.publishEl);
+    // mode switch: Build (this editor) | Characters (the designer)
+    const modes = div("mb5-tabbar", bar);
+    modes.style.marginBottom = "0";
+    const build = txt("div", "Build", "mb5-tab active", modes);
+    build.style.padding = "5px 14px";
+    const chars = txt("div", "Characters", "mb5-tab", modes);
+    chars.style.padding = "5px 14px";
+    chars.onclick = () => this.host.openDesigner();
+    build.onclick = () => {};
+
+    div("", bar).style.flex = "1";
+
+    btn("New", () => confirm("Discard current level and start fresh?") && this.host.newLevel(), "", bar);
+    btn("Open", () => this.load(), "", bar);
+    btn("Save", () => this.save(), "", bar);
+    btn("Demo", () => confirm("Discard current level and load the demo?") && this.host.loadDemo(), "", bar);
+    btn("Publish", () => this.showPublish(), "", bar);
+    div("", bar).style.cssText = "width:1px;height:22px;background:#262a3a;margin:0 4px";
+    this.undoBtn = btn("↶", () => this.host.editor.undo(), "ghost", bar);
+    this.undoBtn.title = "Undo (Ctrl+Z)";
+    this.redoBtn = btn("↷", () => this.host.editor.redo(), "ghost", bar);
+    this.redoBtn.title = "Redo (Ctrl+Y)";
+    this.playBtn = btn("▶ Play", () => this.host.togglePlay(), "primary", bar);
+    this.playBtn.style.marginLeft = "4px";
+
+    document.body.appendChild(bar);
+    this.chrome.push(bar);
+    this.topbar = bar;
+  }
+  private topbar!: HTMLDivElement;
+
+  // ------------------------------------------------- left rail + tool panels
+  private buildRail() {
+    const rail = div("mb5 mb5-panel");
+    Object.assign(rail.style, {
+      position: "fixed", top: "58px", left: "10px", width: "44px", padding: "5px",
+      display: "flex", flexDirection: "column", gap: "4px", zIndex: "15", alignItems: "center",
+    });
+    for (const t of TOOLS) {
+      const b = btn(t.icon, () => this.setTool(t.key), "icon ghost", rail);
+      b.title = t.label;
+      b.classList.add("mb5-icon");
+      this.toolBtns.set(t.key, b);
+    }
+    div("", rail).style.cssText = "height:1px;width:26px;background:#262a3a;margin:2px 0";
+    const cam = btn("⌂", () => (window as unknown as { __reframe?: () => void }).__reframe?.(), "icon ghost", rail);
+    cam.title = "Frame level (reset camera)";
+    cam.classList.add("mb5-icon");
+    document.body.appendChild(rail);
+    this.chrome.push(rail);
   }
 
-  private publishStatus(msg: string, ok?: boolean) {
-    if (!this.publishEl) return;
-    this.publishEl.textContent = msg;
-    this.publishEl.style.color = ok === undefined ? "#7f849c" : ok ? "#a6e3a1" : "#f38ba8";
+  private buildToolPanels() {
+    const wrap = div("mb5 mb5-panel mb5-scroll");
+    Object.assign(wrap.style, {
+      position: "fixed", top: "58px", left: "62px", width: "230px", padding: "10px",
+      maxHeight: "calc(100vh - 120px)", overflowY: "auto", zIndex: "14",
+    });
+    document.body.appendChild(wrap);
+    this.chrome.push(wrap);
+
+    // --- select panel
+    const sel = div("", wrap);
+    heading("Transform", sel);
+    const gRow = row(sel);
+    for (const m of GIZMOS) {
+      const b = btn(cap(m), () => this.setGizmo(m), "", gRow);
+      this.gizmoBtns.set(m, b);
+    }
+    heading("Snap", sel);
+    const ed = this.host.editor;
+    checkbox("Snap to grid", ed.snap.enabled, (v) => ed.setSnap(v), sel);
+    numField("Position step", ed.snap.pos, (v) => (ed.snap.pos = Math.max(0.1, v)), sel, 0.5);
+    numField("Rotation step °", ed.snap.rotDeg, (v) => (ed.snap.rotDeg = Math.max(1, v)), sel, 5);
+    numField("Scale step", ed.snap.scale, (v) => (ed.snap.scale = Math.max(0.05, v)), sel, 0.05);
+    hint("Drag gizmo handles to transform. F focuses the selection.", sel);
+    this.toolPanels.select = sel;
+
+    // --- place panel
+    const place = div("", wrap);
+    heading("Prefabs", place);
+    const search = el("input", "mb5-in", place);
+    search.type = "search";
+    search.placeholder = "Search…";
+    search.oninput = () => filterPalette();
+    const palette = div("", place);
+    const chips: Array<{ el: HTMLElement; key: string; label: string }> = [];
+    const byCat = new Map<string, HTMLDivElement>();
+    for (const def of allPrefabs()) {
+      let box = byCat.get(def.category);
+      if (!box) {
+        heading(cap(def.category), palette).dataset.cat = def.category;
+        box = div("mb5-row", palette);
+        byCat.set(def.category, box);
+      }
+      const chip = div("mb5-chip", box);
+      const sw = div("mb5-swatch", chip);
+      sw.style.background = rgbToHex(def.baseColor);
+      sw.style.width = "14px";
+      sw.style.height = "14px";
+      txt("span", def.label, "", chip);
+      chip.onclick = () => {
+        this.host.editor.placePrefab = def.key;
+        for (const c of chips) c.el.classList.toggle("active", c.key === def.key);
+        this.setStatusHint(`click a surface to place ${def.label}`);
+      };
+      chips.push({ el: chip, key: def.key, label: def.label.toLowerCase() });
+      if (def.key === this.host.editor.placePrefab) chip.classList.add("active");
+    }
+    const filterPalette = () => {
+      const q = search.value.trim().toLowerCase();
+      for (const c of chips) (c.el as HTMLElement).style.display = !q || c.label.includes(q) ? "" : "none";
+    };
+    hint("Click a chip, then click in the world. Snap applies from the Select tool settings.", place);
+    this.toolPanels.place = place;
+
+    // --- sculpt panel
+    const sc = div("", wrap);
+    heading("Brush", sc);
+    const bRow = row(sc);
+    for (const m of BRUSHES) {
+      const b = btn(cap(m), () => this.setBrush(m), "", bRow);
+      this.brushBtns.set(m, b);
+    }
+    slider("Radius", 2, 40, 1, ed.brush.radius, (v) => (ed.brush.radius = v), sc);
+    slider("Strength", 0.1, 3, 0.1, ed.brush.strength, (v) => (ed.brush.strength = v), sc);
+    hint("Flatten levels toward the height you first clicked. Physics rebuilds when you release.", sc);
+    this.toolPanels.sculpt = sc;
+
+    // --- entity panel
+    const ent = div("", wrap);
+    heading("Gameplay markers", ent);
+    const eRow = row(ent);
+    const echips: HTMLElement[] = [];
+    for (const t of ENTITY_TYPES) {
+      const chip = div("mb5-chip", eRow);
+      const dot = div("", chip);
+      dot.style.cssText = `width:10px;height:10px;border-radius:50%;background:${t.color}`;
+      txt("span", t.label, "", chip);
+      chip.onclick = () => {
+        this.host.editor.entityType = t.key;
+        for (const c of echips) c.classList.toggle("active", c === chip);
+        this.setStatusHint(`click to drop a ${t.label}`);
+      };
+      echips.push(chip);
+      if (t.key === this.host.editor.entityType) chip.classList.add("active");
+    }
+    hint("Spawn = where Play starts. Checkpoints update the respawn. Coins are collectible.", ent);
+    this.toolPanels.entity = ent;
   }
 
+  // ------------------------------------------------- right panel (tabs)
+  private buildRightPanel() {
+    const panel = div("mb5 mb5-panel");
+    Object.assign(panel.style, {
+      position: "fixed", top: "58px", right: "10px", width: "270px", padding: "10px",
+      maxHeight: "calc(100vh - 120px)", display: "flex", flexDirection: "column", zIndex: "15",
+      overflow: "hidden",
+    });
+    const bodies: Record<string, HTMLDivElement> = {};
+    this.rightTabs = tabbar(
+      [
+        { key: "inspector", label: "Inspector" },
+        { key: "level", label: "Level" },
+        { key: "style", label: "Style" },
+      ],
+      (k) => {
+        for (const [key, b] of Object.entries(bodies)) b.style.display = key === k ? "block" : "none";
+      },
+      panel,
+    );
+    const scroll = div("mb5-scroll", panel);
+    scroll.style.cssText = "overflow-y:auto;flex:1;min-height:0";
+    for (const k of ["inspector", "level", "style"]) {
+      bodies[k] = div("", scroll);
+      bodies[k].style.display = k === "inspector" ? "block" : "none";
+    }
+    this.inspectorEl = bodies.inspector;
+    this.levelEl = bodies.level;
+    this.styleEl = bodies.style;
+    this.rightTabs.set("inspector");
+    this.buildLevelTab();
+    this.buildStyleTab();
+    this.showSelection(null);
+    document.body.appendChild(panel);
+    this.chrome.push(panel);
+  }
+
+  /** (Re)build the Level tab from current data. */
+  private buildLevelTab() {
+    const box = this.levelEl;
+    box.textContent = "";
+    const meta = this.host.data.meta;
+    heading("Level", box);
+    textField("Name", meta.name, (v) => this.host.setMeta({ name: v }), box);
+    numField("Gravity Y", meta.gravity?.[1] ?? -16, (v) => this.host.setMeta({ gravityY: v }), box);
+    numField("Kill plane Y", meta.killPlaneY ?? -40, (v) => this.host.setMeta({ killPlaneY: v }), box);
+
+    heading("Water", box);
+    const seaOn = meta.seaLevel !== undefined;
+    let seaVal = meta.seaLevel ?? 0;
+    const seaNum = numField("Sea level Y", seaVal, (v) => {
+      seaVal = v;
+      if (chk.input.checked) this.host.setSeaLevel(v);
+    }, box, 0.5);
+    const chk = checkbox("Ocean plane", seaOn, (v) => this.host.setSeaLevel(v ? seaVal : undefined), box);
+    box.insertBefore(chk.root, seaNum.root);
+
+    heading("Terrain", box);
+    const t = this.host.data.terrain;
+    let sizeX = t?.size[0] ?? 120;
+    let sizeZ = t?.size[1] ?? 120;
+    let cols = t?.resolution[0] ?? 41;
+    let rows = t?.resolution[1] ?? 41;
+    numField("Size X (m)", sizeX, (v) => (sizeX = clampN(v, 20, 2000)), box, 10);
+    numField("Size Z (m)", sizeZ, (v) => (sizeZ = clampN(v, 20, 2000)), box, 10);
+    numField("Grid cols", cols, (v) => (cols = clampN(Math.round(v), 2, 257)), box, 8);
+    numField("Grid rows", rows, (v) => (rows = clampN(Math.round(v), 2, 257)), box, 8);
+    const tRow = row(box);
+    btn("Apply (resample)", () => {
+      this.host.resizeTerrain([sizeX, sizeZ], [cols, rows]);
+      toast("Terrain resampled", "ok");
+    }, "", tRow);
+    btn("New flat", () => {
+      if (confirm("Replace the terrain with a flat grid? (undo not available)"))
+        this.host.regenTerrain(cols);
+    }, "", tRow);
+    hint("Resample keeps the current shape at a new size/detail. Sculpt is cheaper at lower grid sizes.", box);
+
+    heading("Reference image", box);
+    const rRow = row(box);
+    btn("Load…", () => this.pickReference(), "", rRow);
+    btn("Clear", () => this.host.clearReference(), "", rRow);
+    slider("Opacity", 0, 1, 0.05, 0.6, (v) => this.host.setReferenceOpacity(v), box);
+    hint("Underlay a photo of a hand-drawn map to trace it with the sculpt brush.", box);
+  }
+
+  /** (Re)build the Style tab from the current environment + palette. */
+  private buildStyleTab() {
+    const box = this.styleEl;
+    box.textContent = "";
+    const env = this.host.getEnv();
+    const set = (patch: Partial<EnvSettings>) => this.host.setEnv(patch);
+
+    heading("Presets", box);
+    const pRow = row(box);
+    for (const [name, preset] of Object.entries(ENV_PRESETS)) {
+      btn(name, () => {
+        this.host.setEnv(preset);
+        this.buildStyleTab(); // re-read values into the controls
+        toast(`${name} preset applied`, "ok");
+      }, "", pRow);
+    }
+
+    heading("Sky & light", box);
+    colorField("Sky", env.sky, (c) => set({ sky: c }), box);
+    colorField("Horizon bounce", env.horizon, (c) => set({ horizon: c }), box);
+    colorField("Sun color", env.sunColor, (c) => set({ sunColor: c }), box);
+    slider("Sun intensity", 0, 3, 0.05, env.sunIntensity, (v) => set({ sunIntensity: v }), box);
+    slider("Sun azimuth °", 0, 360, 5, env.sunAzimuth, (v) => set({ sunAzimuth: v }), box);
+    slider("Sun elevation °", 5, 90, 1, env.sunElevation, (v) => set({ sunElevation: v }), box);
+    slider("Ambient", 0, 1.5, 0.05, env.ambient, (v) => set({ ambient: v }), box);
+
+    heading("Fog", box);
+    colorField("Fog color", env.fogColor, (c) => set({ fogColor: c }), box);
+    slider("Fog density", 0, 0.02, 0.0005, env.fogDensity, (v) => set({ fogDensity: v }), box, (v) => v.toFixed(4));
+
+    heading("Water", box);
+    colorField("Water color", env.waterColor, (c) => set({ waterColor: c }), box);
+    slider("Water opacity", 0.05, 1, 0.05, env.waterOpacity, (v) => set({ waterOpacity: v }), box);
+
+    heading("Terrain palette", box);
+    hint("Elevation → color ramp, low to high. Edit heights/colors, add or remove stops.", box);
+    const palBox = div("", box);
+    const stops: PaletteStop[] = this.host.getPalette().map((s) => ({ h: s.h, color: [...s.color] as Vec3 }));
+    const apply = () => {
+      stops.sort((a, b) => a.h - b.h);
+      this.host.setPalette(stops.map((s) => ({ h: s.h, color: [...s.color] as Vec3 })));
+    };
+    const rebuild = () => {
+      palBox.textContent = "";
+      stops.forEach((s, i) => {
+        const r = div("mb5-field", palBox);
+        const color = el("input", "mb5-color", r);
+        color.type = "color";
+        color.value = rgbToHex(s.color);
+        color.oninput = () => {
+          s.color = hexToRgbLocal(color.value);
+          apply();
+        };
+        const h = el("input", "mb5-in num", r);
+        h.type = "number";
+        h.step = "0.5";
+        h.value = String(s.h);
+        h.onchange = () => {
+          s.h = parseFloat(h.value) || 0;
+          apply();
+        };
+        txt("span", "m", "mb5-lbl", r);
+        const rm = btn("✕", () => {
+          if (stops.length <= 2) return;
+          stops.splice(i, 1);
+          apply();
+          rebuild();
+        }, "ghost", r);
+        rm.style.padding = "2px 7px";
+        rm.title = "Remove stop";
+      });
+      const aRow = row(palBox);
+      btn("+ Add stop", () => {
+        if (stops.length >= 8) return;
+        const last = stops[stops.length - 1];
+        stops.push({ h: last.h + 8, color: [...last.color] as Vec3 });
+        apply();
+        rebuild();
+      }, "", aRow);
+      btn("Reset", () => {
+        stops.length = 0;
+        for (const s of DEFAULT_PALETTE) stops.push({ h: s.h, color: [...s.color] as Vec3 });
+        this.host.setPalette(undefined);
+        rebuild();
+      }, "", aRow);
+    };
+    rebuild();
+  }
+
+  // ------------------------------------------------- status bar
+  private buildStatusBar() {
+    const bar = div("mb5 mb5-panel");
+    Object.assign(bar.style, {
+      position: "fixed", left: "10px", right: "10px", bottom: "8px", height: "26px",
+      display: "flex", alignItems: "center", gap: "10px", padding: "0 10px",
+      fontSize: "11px", color: "#8b92ab", zIndex: "15",
+    });
+    this.statusHint = txt("span", "", "", bar);
+    this.statusHint.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0";
+    div("", bar).style.cssText = "flex:1 0 12px";
+    this.statusStats = txt("span", "", "", bar);
+    this.statusStats.style.cssText = "white-space:nowrap;flex:none";
+    const help = btn("?", () => this.showShortcuts(), "ghost", bar);
+    help.style.padding = "1px 8px";
+    help.title = "Keyboard shortcuts (?)";
+    document.body.appendChild(bar);
+    this.chrome.push(bar);
+    this.updateStats();
+  }
+
+  private setStatusHint(t: string) {
+    this.statusHint.textContent = t;
+  }
+
+  updateStats() {
+    const d = this.host.data;
+    const t = d.terrain;
+    this.statusStats.textContent =
+      `${d.prefabs.length} prefabs · ${d.entities.length} entities` +
+      (t ? ` · ${t.resolution[0]}×${t.resolution[1]} terrain` : "") +
+      " · autosave on";
+  }
+
+  // ------------------------------------------------- overlays
+  private showShortcuts() {
+    const m = modal("Keyboard & mouse");
+    const table: Array<[string, string]> = [
+      ["1 – 4", "Tools: Select · Place · Sculpt · Entity"],
+      ["Q / W / E", "Gizmo: move / rotate / scale"],
+      ["F", "Focus camera on selection"],
+      ["Del", "Delete selection"],
+      ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
+      ["Ctrl+D", "Duplicate selection"],
+      ["Tab", "Toggle Play mode"],
+      ["drag / wheel", "Orbit / zoom camera"],
+      ["right-drag", "Pan camera"],
+      ["?", "This help"],
+      ["— Play mode —", ""],
+      ["WASD / arrows", "Move (camera-relative)"],
+      ["Space", "Jump — again in air for double jump, hold to glide (if unlocked)"],
+      ["Shift", "Dash (if unlocked)"],
+      ["C", "Ground pound (if unlocked)"],
+    ];
+    for (const [k, desc] of table) {
+      const r = div("mb5-field", m.body);
+      const kk = txt("span", k, k.startsWith("—") ? "mb5-lbl" : "mb5-kbd", r);
+      kk.style.minWidth = "110px";
+      txt("span", desc, "mb5-lbl", r);
+    }
+  }
+
+  private showPublish() {
+    const m = modal("Publish to GitHub");
+    const cfg = loadConfig();
+    hint("Writes the current level JSON into your repo via the GitHub API. Needs a fine-grained PAT with Contents: write. The token stays in this browser.", m.body);
+    sep(m.body);
+    const tok = el("input", "mb5-in", m.body);
+    tok.type = "password";
+    tok.placeholder = "fine-grained PAT";
+    tok.value = loadToken();
+    const tRow = row(m.body);
+    btn("Save token", () => {
+      saveToken(tok.value.trim());
+      toast("Token saved (browser-local)", "ok");
+    }, "", tRow);
+    btn("Clear", () => {
+      saveToken("");
+      tok.value = "";
+    }, "", tRow);
+    sep(m.body);
+    const mk = (label: string, key: keyof typeof cfg) =>
+      textField(label, cfg[key], (v) => {
+        cfg[key] = v.trim();
+        saveConfig(cfg);
+      }, m.body);
+    mk("Owner", "owner");
+    mk("Repo", "repo");
+    mk("Branch", "branch");
+    mk("Dir", "dir");
+    sep(m.body);
+    const status = hint("", m.body);
+    const go = btn("Publish level", async () => {
+      go.disabled = true;
+      status.textContent = "publishing…";
+      const res = await publishLevel(this.host.getData(), cfg, tok.value.trim());
+      status.textContent = res.message;
+      (status as HTMLElement).style.color = res.ok ? "#a6e3a1" : "#f38ba8";
+      toast(res.ok ? "Published ✓" : "Publish failed", res.ok ? "ok" : "err");
+      go.disabled = false;
+    }, "primary", m.body);
+  }
+
+  // ------------------------------------------------- tool state
   setTool(t: Tool) {
     this.host.editor.setTool(t);
-    for (const [k, b] of this.toolBtns) b.style.background = k === t ? "#456" : "#2a2d3a";
-    this.sections.gizmo.style.display = t === "select" ? "block" : "none";
-    this.sections.place.style.display = t === "place" ? "block" : "none";
-    this.sections.entity.style.display = t === "entity" ? "block" : "none";
-    this.sections.sculpt.style.display = t === "sculpt" ? "block" : "none";
+    for (const [k, b] of this.toolBtns) b.classList.toggle("active", k === t);
+    for (const [k, p] of Object.entries(this.toolPanels))
+      (p as HTMLElement).style.display = k === t ? "block" : "none";
+    const def = TOOLS.find((x) => x.key === t);
+    this.setStatusHint(def ? `${cap(t)} — ${def.hintText}` : "");
+    if (t === "select") this.setGizmo(this.host.editor.gizmoMode);
+    if (t === "sculpt") this.setBrush(this.host.editor.brush.mode);
   }
 
-  /** Re-sync the Level inputs from the current data (after a load/new). */
-  refreshLevelFields() {
-    const meta = this.host.data.meta;
-    this.nameIn.value = meta.name;
-    this.gravIn.value = String(meta.gravity?.[1] ?? -16);
-    this.killIn.value = String(meta.killPlaneY ?? -40);
+  private setGizmo(m: GizmoMode) {
+    this.host.editor.setGizmoMode(m);
+    for (const [k, b] of this.gizmoBtns) b.classList.toggle("active", k === m);
+  }
+
+  private setBrush(m: BrushMode) {
+    this.host.editor.brush.mode = m;
+    for (const [k, b] of this.brushBtns) b.classList.toggle("active", k === m);
   }
 
   updateHistory() {
     const h = this.host.editor.history;
-    this.undoBtn.style.opacity = h.canUndo ? "1" : "0.4";
-    this.redoBtn.style.opacity = h.canRedo ? "1" : "0.4";
+    this.undoBtn.disabled = !h.canUndo;
+    this.redoBtn.disabled = !h.canRedo;
+    this.updateStats();
   }
 
+  /** Re-sync the Level + Style tabs from current data (after load/new). */
+  refreshPanels() {
+    this.buildLevelTab();
+    this.buildStyleTab();
+    this.updateStats();
+  }
+
+  // ------------------------------------------------- inspector
   showSelection(sel: Selection | null) {
-    const box = this.inspector;
+    const box = this.inspectorEl;
     box.textContent = "";
     if (!sel) {
-      box.textContent = "—";
+      heading("Selection", box);
+      hint("Nothing selected. Use the Select tool (1) and click a prefab or marker.", box);
+      this.updateStats();
       return;
     }
-    box.appendChild(text("div", `${sel.kind}: ${sel.label}`));
+    heading(sel.kind === "prefab" ? "Prefab" : "Entity", box);
+    const title = txt("div", sel.label, "", box);
+    title.style.cssText = "font:700 13px system-ui;margin-bottom:2px";
+    const idl = txt("div", sel.id, "mb5-lbl", box);
+    idl.style.marginBottom = "6px";
+
     const isPrefab = sel.kind === "prefab";
-
-    const get = (): { pos: Vec3; rot: Vec3; scale: Vec3 } => ({
-      pos: readVec(box, "pos"),
-      rot: isPrefab ? readVec(box, "rot") : [0, 0, 0],
-      scale: isPrefab ? readVec(box, "scale") : [1, 1, 1],
-    });
-    const commit = () => this.host.editor.setSelectedTransform(get());
-
-    box.appendChild(vecRow("pos", sel.pos, commit));
+    const commit = () =>
+      this.host.editor.setSelectedTransform({
+        pos: readVec(box, "pos"),
+        rot: isPrefab ? readVec(box, "rot") : [0, 0, 0],
+        scale: isPrefab ? readVec(box, "scale") : [1, 1, 1],
+      });
+    vecRow("pos", sel.pos, commit, box);
     if (isPrefab) {
-      box.appendChild(vecRow("rot", sel.rot, commit));
-      box.appendChild(vecRow("scale", sel.scale, commit));
-
-      const cRow = el("div");
-      style(cRow, { display: "flex", gap: "6px", alignItems: "center", marginTop: "6px" });
-      const color = el("input");
-      color.type = "color";
-      color.value = rgbToHex(sel.tint ?? [1, 1, 1]);
-      color.onchange = () => this.host.editor.setSelectedTint(hexToRgb(color.value));
-      cRow.appendChild(text("span", "tint"));
-      cRow.appendChild(color);
-      const collSel = el("select");
-      for (const c of COLLIDERS) {
-        const o = el("option");
-        o.value = c;
-        o.textContent = c;
-        if ((sel.collider ?? "auto") === c) o.selected = true;
-        collSel.appendChild(o);
-      }
-      collSel.onchange = () => this.host.editor.setSelectedCollider(collSel.value as ColliderKind);
-      cRow.appendChild(collSel);
-      box.appendChild(cRow);
+      vecRow("rot", sel.rot, commit, box);
+      vecRow("scale", sel.scale, commit, box);
+      colorField("Tint", sel.tint ?? [1, 1, 1], (c) => this.host.editor.setSelectedTint(c), box);
+      selectField(
+        "Collider",
+        COLLIDERS.map((c) => ({ value: c, label: c })),
+        sel.collider ?? "auto",
+        (v) => this.host.editor.setSelectedCollider(v as ColliderKind),
+        box,
+      );
     }
-
-    const del = button("Delete", () => this.host.editor.deleteSelected());
-    style(del, { marginTop: "6px", background: "#a33" });
-    box.appendChild(del);
+    const bRow = row(box);
+    bRow.style.marginTop = "8px";
+    if (isPrefab) btn("Duplicate", () => this.host.editor.duplicateSelected(), "", bRow);
+    btn("Focus", () => this.host.editor.focusSelected(), "", bRow);
+    btn("Delete", () => this.host.editor.deleteSelected(), "danger", bRow);
+    this.updateStats();
   }
 
+  // ------------------------------------------------- play-mode chrome
   setMode(playing: boolean) {
-    this.playBtn.textContent = playing ? "■ Edit" : "▶ Play";
-    this.playBtn.style.background = playing ? "#a33" : "#2a6";
-    // Collapse the whole editor panel while playing; Tab (or the HUD hint) exits.
-    this.root.style.display = playing ? "none" : "block";
+    this.playBtn.textContent = playing ? "■ Stop" : "▶ Play";
+    this.playBtn.classList.toggle("danger", playing);
+    this.playBtn.classList.toggle("primary", !playing);
+    // Class-based hide: inline `display=""` would wipe the panels' flex display.
+    for (const c of this.chrome) if (c !== this.topbar) c.classList.toggle("mb5-hidden", playing);
+    // In play mode shrink the topbar to just the stop control.
+    for (const child of Array.from(this.topbar.children) as HTMLElement[]) {
+      if (child !== this.playBtn && !isBrandEl(child)) child.style.visibility = playing ? "hidden" : "visible";
+    }
     if (!playing) this.setTool(this.host.editor.tool);
   }
 
-  // --- helpers ---
-
+  // ------------------------------------------------- file ops
   private save() {
     const data = this.host.getData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -365,6 +638,7 @@ export class EditorUI {
     a.download = `${data.meta.id || "continent"}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
+    toast("Level downloaded", "ok");
   }
 
   private load() {
@@ -376,8 +650,10 @@ export class EditorUI {
       if (!file) return;
       try {
         this.host.loadData(JSON.parse(await file.text()) as ContinentData);
+        toast(`Loaded ${file.name}`, "ok");
       } catch (err) {
         console.error("[editor] failed to load JSON", err);
+        toast("Could not parse that file", "err");
       }
     };
     input.click();
@@ -393,178 +669,24 @@ export class EditorUI {
     };
     input.click();
   }
-
-  private label(t: string): HTMLElement {
-    const d = text("div", t);
-    style(d, {
-      marginTop: "10px",
-      marginBottom: "4px",
-      fontWeight: "600",
-      fontSize: "11px",
-      textTransform: "uppercase",
-      color: "#89b4fa",
-    });
-    return d;
-  }
-
-  private group(title: string): HTMLElement {
-    const g = el("div");
-    g.appendChild(this.label(title));
-    this.root.appendChild(g);
-    return g;
-  }
-
-  private highlight(rowEl: HTMLElement, activeLabel: string) {
-    for (const c of Array.from(rowEl.children) as HTMLButtonElement[])
-      c.style.background = c.textContent === activeLabel ? "#456" : "#2a2d3a";
-  }
-
-  private highlightAcross(container: HTMLElement, activeLabel: string) {
-    for (const b of Array.from(container.querySelectorAll("button")) as HTMLButtonElement[])
-      b.style.background = b.textContent === activeLabel ? "#456" : "#2a2d3a";
-  }
 }
 
-// --- DOM helpers ---
+// --- tiny local helpers ---
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  return e;
-}
-function text<K extends keyof HTMLElementTagNameMap>(tag: K, t: string): HTMLElementTagNameMap[K] {
-  const e = el(tag);
-  e.textContent = t;
-  return e;
-}
-function style(e: HTMLElement, s: Partial<CSSStyleDeclaration>) {
-  Object.assign(e.style, s);
-}
-function row(): HTMLDivElement {
-  const r = el("div");
-  style(r, { display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "4px" });
-  return r;
-}
-function button(labelText: string, onClick: () => void): HTMLButtonElement {
-  const b = text("button", labelText);
-  style(b, {
-    background: "#2a2d3a",
-    color: "#cdd6f4",
-    border: "none",
-    borderRadius: "6px",
-    padding: "5px 8px",
-    cursor: "pointer",
-    fontSize: "12px",
-  });
-  b.onclick = onClick;
-  return b;
-}
-function checkbox(labelText: string, value: boolean, onChange: (v: boolean) => void): HTMLElement {
-  const wrap = text("label", " " + labelText);
-  style(wrap, { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", marginTop: "2px" });
-  const input = el("input");
-  input.type = "checkbox";
-  input.checked = value;
-  input.onchange = () => onChange(input.checked);
-  wrap.prepend(input);
-  return wrap;
-}
-function slider(
-  labelText: string,
-  min: number,
-  max: number,
-  value: number,
-  onInput: (v: number) => void,
-  step = 1,
-): HTMLElement {
-  const wrap = el("div");
-  style(wrap, { marginTop: "6px" });
-  const lab = text("div", `${labelText}: ${value}`);
-  style(lab, { fontSize: "11px", color: "#a6adc8" });
-  const input = el("input");
-  input.type = "range";
-  input.min = String(min);
-  input.max = String(max);
-  input.step = String(step);
-  input.value = String(value);
-  style(input, { width: "100%" });
-  input.oninput = () => {
-    const v = parseFloat(input.value);
-    lab.textContent = `${labelText}: ${v}`;
-    onInput(v);
-  };
-  wrap.appendChild(lab);
-  wrap.appendChild(input);
-  return wrap;
-}
-/** A labeled single numeric input. */
-function numField(labelText: string, value: number, onChange: (v: number) => void): HTMLElement {
-  const wrap = el("div");
-  style(wrap, { display: "flex", gap: "6px", alignItems: "center", marginBottom: "4px", fontSize: "12px" });
-  const lab = text("span", labelText);
-  style(lab, { flex: "1", color: "#a6adc8" });
-  const inp = el("input");
-  inp.type = "number";
-  inp.step = "1";
-  inp.value = String(value);
-  style(inp, { width: "56px", background: "#11131a", color: "#cdd6f4", border: "1px solid #313244", borderRadius: "4px", fontSize: "11px", padding: "2px" });
-  inp.onchange = () => onChange(parseFloat(inp.value) || 0);
-  wrap.appendChild(lab);
-  wrap.appendChild(inp);
-  return wrap;
-}
-
-/** A labeled row of 3 numeric inputs, tagged so readVec() can find it. */
-function vecRow(name: string, value: [number, number, number], onCommit: () => void): HTMLElement {
-  const wrap = el("div");
-  wrap.dataset.vec = name;
-  style(wrap, { display: "flex", gap: "4px", alignItems: "center", marginTop: "4px" });
-  const lab = text("span", name);
-  style(lab, { width: "34px", fontSize: "11px", color: "#a6adc8" });
-  wrap.appendChild(lab);
-  for (let i = 0; i < 3; i++) {
-    const inp = el("input");
-    inp.type = "number";
-    inp.step = "0.1";
-    inp.value = String(value[i]);
-    style(inp, { width: "46px", background: "#11131a", color: "#cdd6f4", border: "1px solid #313244", borderRadius: "4px", fontSize: "11px", padding: "2px" });
-    inp.onchange = onCommit;
-    wrap.appendChild(inp);
-  }
-  return wrap;
-}
-function readVec(box: HTMLElement, name: string): Vec3 {
-  const wrap = box.querySelector(`[data-vec="${name}"]`);
-  if (!wrap) return [0, 0, 0];
-  const inputs = Array.from(wrap.querySelectorAll("input")) as HTMLInputElement[];
-  return [parseFloat(inputs[0].value) || 0, parseFloat(inputs[1].value) || 0, parseFloat(inputs[2].value) || 0];
-}
-function styleInput(e: HTMLInputElement) {
-  style(e, {
-    width: "100%",
-    background: "#11131a",
-    color: "#cdd6f4",
-    border: "1px solid #313244",
-    borderRadius: "4px",
-    fontSize: "11px",
-    padding: "3px",
-    marginBottom: "4px",
-  });
-}
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
-function rgbToHex(rgb: Vec3): string {
-  const h = (n: number) =>
-    Math.max(0, Math.min(255, Math.round(n * 255)))
-      .toString(16)
-      .padStart(2, "0");
-  return `#${h(rgb[0])}${h(rgb[1])}${h(rgb[2])}`;
+function clampN(v: number, lo: number, hi: number): number {
+  return isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo;
 }
-function hexToRgb(hex: string): Vec3 {
+function hexToRgbLocal(hex: string): Vec3 {
   const n = parseInt(hex.slice(1), 16);
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
-function reframe() {
-  (window as unknown as { __reframe?: () => void }).__reframe?.();
+function isTyping(): boolean {
+  const tag = document.activeElement?.tagName ?? "";
+  return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+}
+function isBrandEl(e: HTMLElement): boolean {
+  return e.tagName === "DIV" && e.textContent === "MB5";
 }

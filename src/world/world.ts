@@ -8,18 +8,28 @@
 
 import {
   Color3,
+  Color4,
   Mesh,
   MeshBuilder,
   PhysicsAggregate,
   PhysicsShapeType,
+  Scene as BScene,
   StandardMaterial,
   TransformNode,
   VertexBuffer,
 } from "@babylonjs/core";
-import type { PhysicsShapeParameters, Scene } from "@babylonjs/core";
+import type { DirectionalLight, HemisphericLight, PhysicsShapeParameters, Scene } from "@babylonjs/core";
 import { Vector3 } from "@babylonjs/core";
-import type { ColliderKind, ContinentData, EntityInstance, PrefabInstance, Vec3 } from "./schema";
-import { DEFAULT_GRAVITY } from "./schema";
+import type {
+  ColliderKind,
+  ContinentData,
+  EntityInstance,
+  EnvSettings,
+  PaletteStop,
+  PrefabInstance,
+  Vec3,
+} from "./schema";
+import { DEFAULT_ENV, DEFAULT_GRAVITY } from "./schema";
 import { getPrefab } from "./prefabs";
 import { buildTerrain, terrainGeometry, type TerrainMesh } from "./terrain";
 
@@ -59,6 +69,7 @@ export class World implements ContinentResult {
   prefabMeshes = new Map<string, Mesh>();
   entityMeshes = new Map<string, Mesh>();
   terrain?: TerrainMesh;
+  water?: Mesh;
 
   private aggregates = new Map<string, PhysicsAggregate>();
   private matCache = new Map<string, StandardMaterial>();
@@ -78,6 +89,76 @@ export class World implements ContinentResult {
     if (data.meta.seaLevel !== undefined) this.buildWater(data.meta.seaLevel);
     for (const inst of data.prefabs) this.realizePrefab(inst);
     for (const ent of data.entities) this.realizeEntity(ent);
+    this.applyEnv();
+  }
+
+  // --- environment aesthetics ---
+
+  /** Resolved env (level settings over engine defaults). */
+  env(): Required<EnvSettings> {
+    return { ...DEFAULT_ENV, ...(this.data.meta.env ?? {}) };
+  }
+
+  /** Merge a patch into meta.env and re-apply to the scene. */
+  setEnv(patch: Partial<EnvSettings>) {
+    this.data.meta.env = { ...(this.data.meta.env ?? {}), ...patch };
+    this.applyEnv();
+  }
+
+  /** Push meta.env (+defaults) into scene clear color, fog, lights, and water. */
+  applyEnv() {
+    const e = this.env();
+    const s = this.scene;
+    s.clearColor = new Color4(e.sky[0], e.sky[1], e.sky[2], 1);
+    if (e.fogDensity > 0) {
+      s.fogMode = BScene.FOGMODE_EXP2;
+      s.fogDensity = e.fogDensity;
+      s.fogColor = new Color3(e.fogColor[0], e.fogColor[1], e.fogColor[2]);
+    } else {
+      s.fogMode = BScene.FOGMODE_NONE;
+    }
+    const sun = s.getLightByName("sun") as DirectionalLight | null;
+    if (sun) {
+      sun.intensity = e.sunIntensity;
+      sun.diffuse = new Color3(e.sunColor[0], e.sunColor[1], e.sunColor[2]);
+      const az = (e.sunAzimuth * Math.PI) / 180;
+      const el = (e.sunElevation * Math.PI) / 180;
+      sun.direction = new Vector3(
+        -Math.cos(el) * Math.sin(az),
+        -Math.sin(el),
+        -Math.cos(el) * Math.cos(az),
+      );
+    }
+    const hemi = s.getLightByName("hemi") as HemisphericLight | null;
+    if (hemi) {
+      hemi.intensity = e.ambient;
+      hemi.groundColor = new Color3(e.horizon[0], e.horizon[1], e.horizon[2]);
+    }
+    if (this.waterMat) {
+      this.waterMat.diffuseColor = new Color3(e.waterColor[0], e.waterColor[1], e.waterColor[2]);
+      this.waterMat.emissiveColor = new Color3(e.waterColor[0] * 0.35, e.waterColor[1] * 0.35, e.waterColor[2] * 0.35);
+      this.waterMat.alpha = e.waterOpacity;
+    }
+  }
+
+  /** Set/clear the sea level (rebuilds the water plane) and store it in meta. */
+  setSeaLevel(level: number | undefined) {
+    this.water?.dispose();
+    this.water = undefined;
+    if (level === undefined) delete this.data.meta.seaLevel;
+    else {
+      this.data.meta.seaLevel = level;
+      this.buildWater(level);
+      this.applyEnv();
+    }
+  }
+
+  /** Replace the terrain elevation ramp and refresh vertex colors live. */
+  setTerrainPalette(stops: PaletteStop[] | undefined) {
+    if (!this.data.terrain) return;
+    if (stops) this.data.terrain.palette = stops;
+    else delete this.data.terrain.palette;
+    this.refreshTerrainGeometry();
   }
 
   private buildWater(level: number) {
@@ -88,25 +169,26 @@ export class World implements ContinentResult {
     mesh.parent = this.root;
     mesh.position.set((b.min[0] + b.max[0]) / 2, level, (b.min[2] + b.max[2]) / 2);
     mesh.isPickable = false;
-    const mat = new StandardMaterial("mat:water", this.scene);
-    mat.diffuseColor = new Color3(0.1, 0.32, 0.55);
-    mat.specularColor = new Color3(0.4, 0.5, 0.6);
-    mat.emissiveColor = new Color3(0.04, 0.12, 0.2);
-    mat.alpha = 0.66;
-    mat.backFaceCulling = false;
-    mesh.material = mat;
-    this.waterMat = mat;
+    if (!this.waterMat) {
+      const mat = new StandardMaterial("mat:water", this.scene);
+      mat.specularColor = new Color3(0.4, 0.5, 0.6);
+      mat.backFaceCulling = false;
+      this.waterMat = mat;
+    }
+    mesh.material = this.waterMat;
+    this.water = mesh;
   }
 
   // --- materials ---
 
-  private material(rgb: Vec3): StandardMaterial {
-    const key = rgb.map((n) => n.toFixed(3)).join("_");
+  private material(rgb: Vec3, glow = 0): StandardMaterial {
+    const key = rgb.map((n) => n.toFixed(3)).join("_") + `_g${glow.toFixed(2)}`;
     let m = this.matCache.get(key);
     if (!m) {
       m = new StandardMaterial(`mat:${key}`, this.scene);
       m.diffuseColor = new Color3(rgb[0], rgb[1], rgb[2]);
       m.specularColor = new Color3(0.04, 0.04, 0.04);
+      if (glow > 0) m.emissiveColor = new Color3(rgb[0] * glow, rgb[1] * glow, rgb[2] * glow);
       this.matCache.set(key, m);
     }
     return m;
@@ -198,11 +280,10 @@ export class World implements ContinentResult {
     mesh.scaling.set(inst.scale[0], inst.scale[1], inst.scale[2]);
 
     const tint = inst.tint ?? [1, 1, 1];
-    mesh.material = this.material([
-      def.baseColor[0] * tint[0],
-      def.baseColor[1] * tint[1],
-      def.baseColor[2] * tint[2],
-    ]);
+    mesh.material = this.material(
+      [def.baseColor[0] * tint[0], def.baseColor[1] * tint[1], def.baseColor[2] * tint[2]],
+      def.glow ?? 0,
+    );
     mesh.metadata = { instanceId: inst.id, prefab: inst.prefab };
     this.prefabMeshes.set(inst.id, mesh);
     this.rebuildCollider(inst.id);
@@ -278,7 +359,10 @@ export class World implements ContinentResult {
     inst.tint = [...tint];
     const def = getPrefab(inst.prefab);
     const base = def?.baseColor ?? [1, 1, 1];
-    mesh.material = this.material([base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]]);
+    mesh.material = this.material(
+      [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
+      def?.glow ?? 0,
+    );
   }
 
   /** Change a prefab's collider kind. */

@@ -5,8 +5,8 @@
 // through a command History for undo/redo. Drives a World; ContinentData stays
 // the source of truth so save is trivial.
 
-import { GizmoManager, PointerEventTypes } from "@babylonjs/core";
-import type { ArcRotateCamera, Nullable, Observer, PointerInfo, Scene } from "@babylonjs/core";
+import { Color3, GizmoManager, MeshBuilder, PointerEventTypes, StandardMaterial } from "@babylonjs/core";
+import type { ArcRotateCamera, Mesh, Nullable, Observer, PointerInfo, Scene } from "@babylonjs/core";
 import type { ColliderKind, Vec3 } from "../world/schema";
 import type { World } from "../world/world";
 import { getPrefab } from "../world/prefabs";
@@ -61,6 +61,7 @@ export class Editor {
   private enabled = false;
   private dragBefore: Transform | null = null;
   private sculptBefore: number[] | null = null;
+  private brushRing: Mesh | null = null;
 
   constructor(
     private scene: Scene,
@@ -91,6 +92,54 @@ export class Editor {
     if (this.ptrObs) this.scene.onPointerObservable.remove(this.ptrObs);
     this.ptrObs = null;
     this.gizmos.attachToMesh(null);
+    // Dispose (not just hide): disable() is also the discard path when a new
+    // Editor replaces this one on level load; the ring recreates lazily.
+    this.brushRing?.material?.dispose();
+    this.brushRing?.dispose();
+    this.brushRing = null;
+  }
+
+  // --- sculpt brush ring (hover preview of radius) ---
+
+  private ensureBrushRing(): Mesh {
+    if (!this.brushRing) {
+      const ring = MeshBuilder.CreateTorus(
+        "brushRing",
+        { diameter: 1, thickness: 0.035, tessellation: 48 },
+        this.scene,
+      );
+      const mat = new StandardMaterial("brushRingMat", this.scene);
+      mat.emissiveColor = new Color3(0.45, 0.9, 0.55);
+      mat.disableLighting = true;
+      mat.alpha = 0.85;
+      ring.material = mat;
+      ring.isPickable = false;
+      this.brushRing = ring;
+    }
+    return this.brushRing;
+  }
+
+  private updateBrushRing() {
+    if (this.tool !== "sculpt" || !this.world.terrain) {
+      this.hideBrushRing();
+      return;
+    }
+    const t = this.world.terrain;
+    const pick = this.scene.pick(this.scene.pointerX, this.scene.pointerY, (m) => m === t.mesh);
+    if (!pick?.hit || !pick.pickedPoint) {
+      this.hideBrushRing();
+      return;
+    }
+    const ring = this.ensureBrushRing();
+    ring.setEnabled(true);
+    ring.position.copyFrom(pick.pickedPoint);
+    ring.position.y += 0.25;
+    const d = this.brush.radius * 2;
+    ring.scaling.set(d, 1.5, d);
+  }
+
+  private hideBrushRing() {
+    this.brushRing?.setEnabled(false);
   }
 
   // --- tools ---
@@ -102,6 +151,7 @@ export class Editor {
       this.deselect();
     } else {
       this.camera.attachControl();
+      this.hideBrushRing();
     }
   }
 
@@ -218,6 +268,7 @@ export class Editor {
         }
         break;
       case PointerEventTypes.POINTERMOVE:
+        if (this.tool === "sculpt") this.updateBrushRing();
         if (this.pointerDown && this.tool === "sculpt") this.sculptAtPointer();
         break;
       case PointerEventTypes.POINTERUP: {

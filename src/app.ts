@@ -7,6 +7,7 @@ import type { ArcRotateCamera, Mesh, Scene, StandardMaterial, Texture } from "@b
 import { Color3, MeshBuilder, StandardMaterial as StdMat, Texture as Tex, Vector3 } from "@babylonjs/core";
 import type { GameState } from "./game/state";
 import type { ContinentData } from "./world/schema";
+import { DEFAULT_PALETTE } from "./world/schema";
 import { buildContinent, spawnPoint, World } from "./world/world";
 import { flatTerrain, makeDemoContinent, newContinent } from "./world/demo";
 import { normalizeContinent } from "./world/normalize";
@@ -60,12 +61,28 @@ export class App {
       togglePlay: () => self.toggleMode(),
       isPlaying: () => self.mode === "play",
       setMeta: (p) => self.setMeta(p),
+      setSeaLevel: (v) => {
+        self.world.setSeaLevel(v);
+        self.scheduleSave();
+      },
+      setEnv: (p) => {
+        self.world.setEnv(p);
+        self.scheduleSave();
+      },
+      getEnv: () => self.world.env(),
+      setPalette: (s) => {
+        self.world.setTerrainPalette(s);
+        self.scheduleSave();
+      },
+      getPalette: () => (self.world.data.terrain?.palette ?? DEFAULT_PALETTE).map((s) => ({ h: s.h, color: [...s.color] as [number, number, number] })),
+      resizeTerrain: (size, res) => self.resizeTerrain(size, res),
       regenTerrain: (r) => self.regenTerrain(r),
       newLevel: () => self.newLevel(),
       loadDemo: () => self.loadDemo(),
       setReferenceImage: (f) => self.setReferenceImage(f),
       setReferenceOpacity: (v) => self.setReferenceOpacity(v),
       clearReference: () => self.clearReference(),
+      openDesigner: () => self.openDesigner(),
     });
     this.hud = new Hud(state);
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
@@ -149,7 +166,8 @@ export class App {
       this.session?.update(dt);
       this.input.consume();
     }
-    this.world.updateCulling(this.camera.position);
+    // Distance-cull only while playing; the editor must always show everything.
+    if (this.mode === "play") this.world.updateCulling(this.camera.position);
   }
 
   // --- level properties (from the editor UI) ---
@@ -169,6 +187,48 @@ export class App {
     const size = this.world.data.terrain?.size[0] ?? 120;
     this.world.setTerrain(flatTerrain(size, resolution));
     this.scheduleSave();
+  }
+
+  /** Resample the current heightmap onto a new extent/grid (bilinear). */
+  resizeTerrain(size: [number, number], res: [number, number]) {
+    const old = this.world.data.terrain;
+    const [cols, rows] = res;
+    const heights = new Array(cols * rows).fill(0);
+    if (old) {
+      const [oc, or] = old.resolution;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          // sample the old grid at the same normalized position
+          const u = (c / Math.max(1, cols - 1)) * (oc - 1);
+          const v = (r / Math.max(1, rows - 1)) * (or - 1);
+          const c0 = Math.floor(u);
+          const r0 = Math.floor(v);
+          const c1 = Math.min(oc - 1, c0 + 1);
+          const r1 = Math.min(or - 1, r0 + 1);
+          const fu = u - c0;
+          const fv = v - r0;
+          const h00 = old.heights[r0 * oc + c0] ?? 0;
+          const h10 = old.heights[r0 * oc + c1] ?? 0;
+          const h01 = old.heights[r1 * oc + c0] ?? 0;
+          const h11 = old.heights[r1 * oc + c1] ?? 0;
+          heights[r * cols + c] =
+            h00 * (1 - fu) * (1 - fv) + h10 * fu * (1 - fv) + h01 * (1 - fu) * fv + h11 * fu * fv;
+        }
+      }
+    }
+    this.world.setTerrain({
+      size,
+      resolution: res,
+      heights,
+      ...(old?.origin ? { origin: old.origin } : {}),
+      ...(old?.palette ? { palette: old.palette } : {}),
+    });
+    this.scheduleSave();
+  }
+
+  /** Switch to the character designer (built as its own overlay mode). */
+  openDesigner() {
+    void import("./character/designer").then(({ openDesigner }) => openDesigner());
   }
 
   newLevel() {
@@ -273,6 +333,7 @@ export class App {
     this.player?.dispose();
     this.player = undefined;
     (window as unknown as Record<string, unknown>).__player = undefined;
+    this.world.updateCulling(this.camera.position, Infinity); // un-cull everything for editing
     this.editor.enable();
     this.ui.setMode(false);
     this.state.setPhase("editor");
@@ -290,7 +351,7 @@ export class App {
     this.editor.enable();
     this.ui.showSelection(null);
     this.ui.updateHistory();
-    this.ui.refreshLevelFields();
+    this.ui.refreshPanels();
     this.ui.setMode(false);
     const w = window as unknown as Record<string, unknown>;
     w.__world = this.world;

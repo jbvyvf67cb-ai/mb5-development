@@ -10,6 +10,8 @@ import {
   SCHEMA_VERSION,
   type ContinentData,
   type EntityInstance,
+  type EnvSettings,
+  type PaletteStop,
   type PrefabInstance,
   type TerrainData,
   type Vec3,
@@ -47,7 +49,35 @@ function normTerrain(raw: unknown): TerrainData | undefined {
   const out: TerrainData = { size: [size[0], size[1]], resolution: [cols, rows], heights };
   if (Array.isArray(t.origin)) out.origin = [num((t.origin as number[])[0], 0), num((t.origin as number[])[1], 0)];
   if (typeof t.material === "string") out.material = t.material;
+  const palette = normPalette(t.palette);
+  if (palette) out.palette = palette;
   return out;
+}
+
+function normPalette(raw: unknown): PaletteStop[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const stops = raw
+    .filter((s): s is Loose => !!s && typeof s === "object")
+    .map((s) => ({ h: num(s.h, 0), color: vec3(s.color, [1, 1, 1]) }))
+    .sort((a, b) => a.h - b.h);
+  return stops.length >= 2 ? stops : undefined;
+}
+
+/** Keep only recognized env fields, with type-checked values. */
+function normEnv(raw: unknown): EnvSettings | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const e = raw as Loose;
+  const out: EnvSettings = {};
+  const color = (k: keyof EnvSettings & string) => {
+    if (Array.isArray(e[k])) (out[k] as Vec3) = vec3(e[k], [1, 1, 1]);
+  };
+  const scalar = (k: keyof EnvSettings & string) => {
+    if (typeof e[k] === "number" && isFinite(e[k] as number)) (out[k] as number) = e[k] as number;
+  };
+  color("sky"); color("horizon"); color("fogColor"); color("sunColor"); color("waterColor");
+  scalar("fogDensity"); scalar("sunIntensity"); scalar("sunAzimuth"); scalar("sunElevation");
+  scalar("ambient"); scalar("waterOpacity");
+  return Object.keys(out).length ? out : undefined;
 }
 
 function normPrefab(raw: unknown): PrefabInstance | null {
@@ -143,6 +173,10 @@ export function normalizeContinent(raw: unknown): ContinentData {
       gravity: Array.isArray(metaRaw.gravity) ? vec3(metaRaw.gravity, DEFAULT_GRAVITY) : [...DEFAULT_GRAVITY],
       killPlaneY: num(metaRaw.killPlaneY, -40),
       ...(typeof metaRaw.seaLevel === "number" ? { seaLevel: metaRaw.seaLevel } : {}),
+      ...(() => {
+        const env = normEnv(metaRaw.env);
+        return env ? { env } : {};
+      })(),
     },
     prefabs,
     entities,

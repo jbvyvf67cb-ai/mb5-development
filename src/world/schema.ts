@@ -32,8 +32,42 @@ export interface ContinentMeta {
   killPlaneY?: number;
   /** If set, a translucent water plane renders at this Y across the bounds (sea level). */
   seaLevel?: number;
+  /** Aesthetic environment settings (sky/fog/sun/water); absent fields use defaults. */
+  env?: EnvSettings;
   /** Kept if any OSM-derived assets are ever used: "Map data © OpenStreetMap contributors". */
   attribution?: string;
+}
+
+/**
+ * Environment look — every field optional so old levels load unchanged.
+ * Colors are RGB 0..1. Applied live by World.applyEnv() and editable from the
+ * map maker's Style tab.
+ */
+export interface EnvSettings {
+  /** Sky/background color (scene clear color). */
+  sky?: Vec3;
+  /** Hemispheric bounce color from below (ground tint of the sky light). */
+  horizon?: Vec3;
+  /** Exponential fog color + density (0 disables fog). */
+  fogColor?: Vec3;
+  fogDensity?: number;
+  /** Sun (directional light) tint, intensity, and direction as azimuth/elevation degrees. */
+  sunColor?: Vec3;
+  sunIntensity?: number;
+  sunAzimuth?: number;
+  sunElevation?: number;
+  /** Ambient (hemispheric) intensity. */
+  ambient?: number;
+  /** Water plane tint + opacity (used when meta.seaLevel is set). */
+  waterColor?: Vec3;
+  waterOpacity?: number;
+}
+
+/** One stop of the terrain elevation color ramp. */
+export interface PaletteStop {
+  /** Height (m) at which this color is fully reached. */
+  h: number;
+  color: Vec3;
 }
 
 /** Sculptable heightmap terrain — row-major height samples over an XZ grid. */
@@ -48,6 +82,8 @@ export interface TerrainData {
   origin?: [number, number];
   /** Material id from the runtime material table; defaults to a grass material. */
   material?: string;
+  /** Elevation color ramp (ascending h). Absent = DEFAULT_PALETTE (sand→grass→rock→snow). */
+  palette?: PaletteStop[];
 }
 
 /** A placed true-3D building block (procedural prefab or, later, a glTF asset). */
@@ -87,6 +123,30 @@ export interface ContinentData {
 
 export const SCHEMA_VERSION = 1;
 export const DEFAULT_GRAVITY: Vec3 = [0, -16, 0];
+
+/** The default elevation ramp: sand → coastal grass → green → rock → snow. */
+export const DEFAULT_PALETTE: PaletteStop[] = [
+  { h: 0.4, color: [0.78, 0.72, 0.5] },
+  { h: 3, color: [0.42, 0.6, 0.32] },
+  { h: 12, color: [0.24, 0.46, 0.24] },
+  { h: 22, color: [0.45, 0.4, 0.34] },
+  { h: 30, color: [0.93, 0.93, 0.96] },
+];
+
+/** Engine defaults for every EnvSettings field (what an absent field means). */
+export const DEFAULT_ENV: Required<EnvSettings> = {
+  sky: [0.05, 0.07, 0.11],
+  horizon: [0.18, 0.16, 0.14],
+  fogColor: [0.55, 0.65, 0.8],
+  fogDensity: 0,
+  sunColor: [1, 0.98, 0.92],
+  sunIntensity: 1.4,
+  sunAzimuth: 240,
+  sunElevation: 55,
+  ambient: 0.55,
+  waterColor: [0.1, 0.32, 0.55],
+  waterOpacity: 0.66,
+};
 
 /** Create an empty continent with sane defaults. */
 export function emptyContinent(id: string, name = id): ContinentData {
