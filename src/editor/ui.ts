@@ -11,6 +11,9 @@ import { DEFAULT_PALETTE } from "../world/schema";
 import { allPrefabs } from "../world/prefabs";
 import type { BrushMode, Editor, GizmoMode, Selection, Tool } from "./editor";
 import { loadConfig, loadToken, publishLevel, saveConfig, saveToken } from "./publish";
+import { activeCharacterId, allCharacters, setActiveCharacter } from "../character/store";
+import { buildAssistPanel } from "../ai/panel";
+import type { LevelOp } from "../ai/ops";
 import {
   btn, checkbox, colorField, div, el, heading, hint, injectCss, modal, numField, readVec,
   rgbToHex, row, selectField, sep, slider, tabbar, textField, toast, txt, vecRow,
@@ -37,6 +40,7 @@ export interface EditorHost {
   setReferenceOpacity(v: number): void;
   clearReference(): void;
   openDesigner(): void;
+  applyAiOps(ops: LevelOp[]): Promise<string[]>;
 }
 
 const ENTITY_TYPES: Array<{ key: string; label: string; color: string }> = [
@@ -77,6 +81,7 @@ export class EditorUI {
   private undoBtn!: HTMLButtonElement;
   private redoBtn!: HTMLButtonElement;
   private playBtn!: HTMLButtonElement;
+  private charSelect!: HTMLSelectElement;
   private rightTabs!: { set: (k: string) => void };
 
   constructor(host: EditorHost) {
@@ -87,12 +92,31 @@ export class EditorUI {
     this.buildToolPanels();
     this.buildStatusBar(); // before the right panel: its initial render updates the stats line
     this.buildRightPanel();
+    this.buildAssist();
     addEventListener("keydown", (e) => {
       if (e.key === "?" && !isTyping()) this.showShortcuts();
     });
     this.setTool("select");
     this.setMode(false);
     this.updateHistory();
+  }
+
+  /** Claude prompt box: describe additions/changes, ops apply as normal edits. */
+  private buildAssist() {
+    const panel = buildAssistPanel({
+      title: "Assist — describe a change",
+      placeholder: "e.g. \"ring of pillars around the peak\", \"make it a snowy night\", \"a village by the east beach with fences and trees\"",
+      floating: true,
+      onPrompt: async (prompt) => {
+        const { generateLevelOps } = await import("../ai/assist");
+        const res = await generateLevelOps(prompt, this.host.getData());
+        const log = await this.host.applyAiOps(res.ops);
+        toast("Assist applied — Ctrl+Z undoes placed objects", "ok");
+        return [res.summary, ...log];
+      },
+    });
+    document.body.appendChild(panel);
+    this.chrome.push(panel);
   }
 
   // ------------------------------------------------- top bar
@@ -128,6 +152,15 @@ export class EditorUI {
     this.undoBtn.title = "Undo (Ctrl+Z)";
     this.redoBtn = btn("↷", () => this.host.editor.redo(), "ghost", bar);
     this.redoBtn.title = "Redo (Ctrl+Y)";
+    // who you'll play as — kept in sync with the designer's "Use in Play"
+    this.charSelect = el("select", "mb5-in", bar);
+    this.charSelect.title = "Character for Play mode (edit in the Characters tab)";
+    Object.assign(this.charSelect.style, { width: "110px", flex: "none", marginLeft: "4px" });
+    this.charSelect.onchange = () => {
+      setActiveCharacter(this.charSelect.value);
+      this.charSelect.blur();
+    };
+    this.refreshCharacter();
     this.playBtn = btn("▶ Play", () => this.host.togglePlay(), "primary", bar);
     this.playBtn.style.marginLeft = "4px";
 
@@ -569,6 +602,18 @@ export class EditorUI {
     this.buildLevelTab();
     this.buildStyleTab();
     this.updateStats();
+  }
+
+  /** Repopulate the top-bar character picker (roster/active may have changed). */
+  refreshCharacter() {
+    this.charSelect.textContent = "";
+    const active = activeCharacterId();
+    for (const c of allCharacters()) {
+      const o = el("option", "", this.charSelect);
+      o.value = c.id;
+      o.textContent = c.name;
+      if (c.id === active) o.selected = true;
+    }
   }
 
   // ------------------------------------------------- inspector

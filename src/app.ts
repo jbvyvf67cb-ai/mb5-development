@@ -13,6 +13,7 @@ import { flatTerrain, makeDemoContinent, newContinent } from "./world/demo";
 import { normalizeContinent } from "./world/normalize";
 import { Editor } from "./editor/editor";
 import { EditorUI } from "./editor/ui";
+import { toast } from "./editor/widgets";
 import { Input } from "./core/input";
 import { PlayerController } from "./player/controller";
 import { SpriteAvatar } from "./player/avatar";
@@ -86,6 +87,7 @@ export class App {
       setReferenceOpacity: (v) => self.setReferenceOpacity(v),
       clearReference: () => self.clearReference(),
       openDesigner: () => self.openDesigner(),
+      applyAiOps: (ops) => self.applyAiOps(ops),
     });
     this.hud = new Hud(state);
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
@@ -230,9 +232,38 @@ export class App {
     this.scheduleSave();
   }
 
+  /** Apply a batch of Claude-generated level ops through normal edit paths. */
+  applyAiOps(ops: import("./ai/ops").LevelOp[]): Promise<string[]> {
+    return import("./ai/ops").then(({ applyLevelOps }) => {
+      const log = applyLevelOps(ops, {
+        world: this.world,
+        editor: this.editor,
+        setMeta: (p) => this.setMeta(p),
+        setSeaLevel: (v) => {
+          this.world.setSeaLevel(v);
+        },
+        setEnv: (p) => this.world.setEnv(p),
+        setPalette: (s) => this.world.setTerrainPalette(s),
+      });
+      this.ui.refreshPanels();
+      this.scheduleSave();
+      return log;
+    });
+  }
+
   /** Switch to the character designer (built as its own overlay mode). */
   openDesigner() {
-    void import("./character/designer").then(({ openDesigner }) => openDesigner());
+    void import("./character/designer").then(({ openDesigner }) =>
+      openDesigner({
+        // "Use in Play": close the designer and immediately play the current
+        // level as that character — the design → playtest loop in one click.
+        onUse: () => {
+          this.ui.refreshCharacter();
+          if (this.mode === "edit") this.toggleMode();
+        },
+        onClose: () => this.ui.refreshCharacter(),
+      }),
+    );
   }
 
   newLevel() {
@@ -307,9 +338,13 @@ export class App {
 
   private enterPlay() {
     this.mode = "play";
+    // Nothing may keep keyboard focus into play mode (Space/Enter would
+    // re-trigger the focused control).
+    (document.activeElement as HTMLElement | null)?.blur?.();
     this.editor.disable();
     this.ui.setMode(true);
     const character = activeCharacter();
+    toast(`Playing as ${character.name} — WASD + Space · Tab to edit`, "ok");
     this.player = new PlayerController(this.scene, spawnPoint(this.world.data), character);
     this.avatar = new SpriteAvatar(this.scene, this.player, character);
     this.input.attach();

@@ -124,7 +124,12 @@ export function btn(
 ): HTMLButtonElement {
   const b = txt("button", label, `mb5-btn ${cls}`.trim(), parent);
   b.type = "button";
-  b.onclick = onClick;
+  b.onclick = () => {
+    // Blur immediately: a focused button re-triggers on Space/Enter, which in
+    // Play mode means the first jump press clicks "Stop" and kicks you out.
+    b.blur();
+    onClick();
+  };
   return b;
 }
 

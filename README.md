@@ -65,7 +65,25 @@ spawn as; characters autosave and import/export as JSON.
 
 WASD move, Space jump (+ the moves your character owns: `Shift` dash,
 hold-Space glide, `C` ground pound, wall jump), chase camera, coins,
-checkpoints, kill-plane respawn. Tab returns to editing.
+checkpoints, kill-plane respawn. Tab returns to editing. Pick who you play as
+with the top-bar character picker, or hit **▶ Use in Play** in the designer to
+jump straight from designing into playing.
+
+### ✨ Assist — describe it, then tune it
+
+Both editors have a Claude-powered prompt box (bottom-right in Build, under
+the preview in Characters). Describe what you want —
+*"a ring of pillars around the peak"*, *"make it a snowy night"*,
+*"a tall lanky purple rabbit, fast but fragile, can glide"* — and it lands as
+normal edits you then tune by hand (placed objects are undoable with Ctrl+Z;
+generated characters join the roster).
+
+Setup: paste an Anthropic API key into the panel's **key** field (kept
+browser-local, like the GitHub publish token). Level requests come back as
+constrained patch ops (add/remove prefabs & markers with ground snapping,
+environment/palette changes, terrain sculpts) validated against the same
+schema guards as hand-authored data; character requests come back as
+`CharacterData` and are clamped by the normal normalizer.
 
 **Try the movement playground:** `?level=./continents/joshua-slice.json` —
 the hand-drawn world's southern continent as a course that exercises every

@@ -9,6 +9,7 @@ import {
   btn, checkbox, colorField, div, heading, hint, injectCss, row, selectField,
   slider, textField, toast, txt,
 } from "../editor/widgets";
+import { buildAssistPanel } from "../ai/panel";
 import type { Vec3 } from "../world/schema";
 import {
   cloneCharacter, deriveMovement, MOVES, normalizeCharacter,
@@ -22,6 +23,12 @@ import {
 const POSES: PoseKind[] = ["idle", "run", "jump", "fall", "dash", "pound", "glide"];
 const SCALE = 5;
 
+export interface DesignerOpts {
+  /** Called after "Use in Play" sets the active character (host starts play). */
+  onUse?: () => void;
+  onClose?: () => void;
+}
+
 class Designer {
   private root: HTMLDivElement;
   private previewCanvas!: HTMLCanvasElement;
@@ -34,7 +41,7 @@ class Designer {
   private raf = 0;
   private poseChips = new Map<PoseKind, HTMLElement>();
 
-  constructor() {
+  constructor(private opts: DesignerOpts = {}) {
     injectCss();
     this.buffer.width = SPRITE_W;
     this.buffer.height = SPRITE_H;
@@ -58,13 +65,15 @@ class Designer {
     div("", head).style.flex = "1";
     btn("Import", () => this.importJson(), "", head);
     btn("Export", () => this.exportJson(), "", head);
-    const use = btn("Use in Play", () => {
+    const use = btn("▶ Use in Play", () => {
       this.persist();
       setActiveCharacter(this.current.id);
-      this.renderRoster();
-      toast(`${this.current.name} is now the active character`, "ok");
+      toast(`Playing as ${this.current.name}`, "ok");
+      const onUse = this.opts.onUse;
+      this.close();
+      onUse?.();
     }, "primary", head);
-    use.title = "Play mode will spawn this character";
+    use.title = "Play the current level as this character";
     btn("✕ Close", () => this.close(), "", head);
 
     // body: left preview/roster + right form
@@ -90,6 +99,24 @@ class Designer {
       chip.onclick = () => this.setPose(p);
       this.poseChips.set(p, chip);
     }
+    // Claude prompt box: describe a character, then tune it with the sliders.
+    left.appendChild(
+      buildAssistPanel({
+        title: "Assist — describe a character",
+        placeholder: "e.g. \"a tall lanky purple rabbit, super fast but fragile, can glide and wall jump\"",
+        onPrompt: async (prompt) => {
+          const { generateCharacter } = await import("../ai/assist");
+          const c = await generateCharacter(prompt, this.current);
+          this.current = c;
+          this.persist();
+          this.renderRoster();
+          this.renderForm();
+          toast(`Created "${c.name}" — tune it below`, "ok");
+          return [`Created "${c.name}" (${c.moves.length ? c.moves.join(", ") : "no moves"}) — saved to the roster.`];
+        },
+      }),
+    );
+
     heading("Roster", left);
     this.rosterEl = div("", left);
     const rRow = row(left);
@@ -335,13 +362,14 @@ class Designer {
     cancelAnimationFrame(this.raf);
     this.root.remove();
     instance = null;
+    this.opts.onClose?.();
   }
 }
 
 let instance: Designer | null = null;
 
-export function openDesigner() {
-  if (!instance) instance = new Designer();
+export function openDesigner(opts: DesignerOpts = {}) {
+  if (!instance) instance = new Designer(opts);
 }
 
 function vecCss(c: Vec3): string {

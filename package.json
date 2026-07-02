@@ -12,6 +12,7 @@
     "shot": "node qa/shot.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.1",
     "@babylonjs/core": "^8.0.0",
     "@babylonjs/havok": "^1.3.10"
   },
