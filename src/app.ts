@@ -15,6 +15,8 @@ import { Editor } from "./editor/editor";
 import { EditorUI } from "./editor/ui";
 import { Input } from "./core/input";
 import { PlayerController } from "./player/controller";
+import { SpriteAvatar } from "./player/avatar";
+import { activeCharacter } from "./character/store";
 import { Hud } from "./ui/hud";
 import { PlaySession } from "./game/play";
 
@@ -31,6 +33,7 @@ export class App {
   private hud: Hud;
   private input = new Input();
   private player?: PlayerController;
+  private avatar?: SpriteAvatar;
   private session?: PlaySession;
   private camera: ArcRotateCamera;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -163,6 +166,7 @@ export class App {
       this.camera.alpha += d * Math.min(1, dt * 3);
       this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, 1, 0);
 
+      this.avatar?.update(dt, this.camera);
       this.session?.update(dt);
       this.input.consume();
     }
@@ -305,9 +309,13 @@ export class App {
     this.mode = "play";
     this.editor.disable();
     this.ui.setMode(true);
-    this.player = new PlayerController(this.scene, spawnPoint(this.world.data));
+    const character = activeCharacter();
+    this.player = new PlayerController(this.scene, spawnPoint(this.world.data), character);
+    this.avatar = new SpriteAvatar(this.scene, this.player, character);
     this.input.attach();
     this.session = new PlaySession(this.scene, this.world, this.state, this.player);
+    this.player.onPoundLand = (pos) => this.session?.shockwave(pos);
+    this.hud.setCharacter(character);
     this.hud.show();
     this.camera.target.copyFrom(this.player.position);
     this.camera.radius = 14;
@@ -330,6 +338,8 @@ export class App {
     this.session?.dispose();
     this.session = undefined;
     this.hud.hide();
+    this.avatar?.dispose();
+    this.avatar = undefined;
     this.player?.dispose();
     this.player = undefined;
     (window as unknown as Record<string, unknown>).__player = undefined;

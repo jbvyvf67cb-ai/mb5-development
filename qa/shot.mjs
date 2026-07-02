@@ -42,6 +42,12 @@ try {
 for (const a of actions) {
   if (a.wait) await page.waitForTimeout(a.wait);
   else if (a.eval) await page.evaluate(a.eval);
+  else if (a.key) {
+    // {key:"KeyW", downMs:600} — hold a key (Playwright accepts code names).
+    await page.keyboard.down(a.key);
+    await page.waitForTimeout(a.downMs ?? 120);
+    await page.keyboard.up(a.key);
+  }
 }
 
 // Give physics a moment to settle.

@@ -5,8 +5,8 @@
 // the player. Created on entering Play, disposed on exit (which restores any
 // collected coin markers, since the same World is reused for editing).
 
-import type { Scene } from "@babylonjs/core";
-import { Vector3 } from "@babylonjs/core";
+import type { Mesh, Scene } from "@babylonjs/core";
+import { Color3, MeshBuilder, StandardMaterial, Vector3 } from "@babylonjs/core";
 import type { GameState } from "./state";
 import type { World } from "../world/world";
 import type { PlayerController } from "../player/controller";
@@ -20,6 +20,7 @@ export class PlaySession {
   private collected = new Set<string>();
   private coins: Array<{ id: string; pos: Vector3 }> = [];
   private checkpoints: Array<{ id: string; pos: Vector3 }> = [];
+  private effects: Array<{ mesh: Mesh; t: number }> = [];
 
   constructor(
     private scene: Scene,
@@ -36,8 +37,42 @@ export class PlaySession {
     state.resetRun();
   }
 
-  update(_dt: number) {
+  /** Ground-pound impact: an expanding, fading ring. */
+  shockwave(pos: Vector3) {
+    const ring = MeshBuilder.CreateTorus(
+      "shockwave",
+      { diameter: 1, thickness: 0.16, tessellation: 28 },
+      this.scene,
+    );
+    ring.position.copyFrom(pos).addInPlaceFromFloats(0, 0.25, 0);
+    ring.isPickable = false;
+    const mat = new StandardMaterial("shockwaveMat", this.scene);
+    mat.emissiveColor = new Color3(1, 0.9, 0.5);
+    mat.disableLighting = true;
+    mat.alpha = 0.9;
+    ring.material = mat;
+    this.effects.push({ mesh: ring, t: 0 });
+  }
+
+  update(dt: number) {
     const p = this.player.position;
+
+    // advance transient effects
+    for (let i = this.effects.length - 1; i >= 0; i--) {
+      const fx = this.effects[i];
+      fx.t += dt;
+      const k = fx.t / 0.45;
+      if (k >= 1) {
+        fx.mesh.material?.dispose();
+        fx.mesh.dispose();
+        this.effects.splice(i, 1);
+        continue;
+      }
+      const d = 1 + k * 9;
+      fx.mesh.scaling.set(d, 1, d);
+      const m = fx.mesh.material as StandardMaterial | null;
+      if (m) m.alpha = 0.9 * (1 - k);
+    }
 
     for (const coin of this.coins) {
       if (this.collected.has(coin.id)) continue;
@@ -62,6 +97,10 @@ export class PlaySession {
     // restore collected coin markers for editing
     for (const id of this.collected) this.world.entityMeshes.get(id)?.setEnabled(true);
     this.collected.clear();
-    void this.scene;
+    for (const fx of this.effects) {
+      fx.mesh.material?.dispose();
+      fx.mesh.dispose();
+    }
+    this.effects.length = 0;
   }
 }

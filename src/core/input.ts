@@ -9,19 +9,27 @@ export interface InputState {
   moveZ: number; // -1..1, camera-relative forward
   jumpHeld: boolean;
   jumpPressed: boolean; // edge
+  dashPressed: boolean; // edge (Shift)
+  poundPressed: boolean; // edge (C)
 }
 
 export class Input {
-  state: InputState = { moveX: 0, moveZ: 0, jumpHeld: false, jumpPressed: false };
+  state: InputState = {
+    moveX: 0, moveZ: 0, jumpHeld: false, jumpPressed: false, dashPressed: false, poundPressed: false,
+  };
 
   private keys = new Set<string>();
   private jumpEdge = false;
+  private dashEdge = false;
+  private poundEdge = false;
   private attached = false;
 
   private onKeyDown = (e: KeyboardEvent) => {
     if (e.repeat) return;
     this.keys.add(e.code);
     if (e.code === "Space") this.jumpEdge = true;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") this.dashEdge = true;
+    if (e.code === "KeyC") this.poundEdge = true;
   };
   private onKeyUp = (e: KeyboardEvent) => this.keys.delete(e.code);
   private onBlur = () => this.keys.clear();
@@ -59,10 +67,16 @@ export class Input {
     this.state.moveZ = z;
     this.state.jumpHeld = k.has("Space");
     this.state.jumpPressed = this.jumpEdge;
+    this.state.dashPressed = this.dashEdge;
+    this.state.poundPressed = this.poundEdge;
   }
 
   consume() {
     this.jumpEdge = false;
+    this.dashEdge = false;
+    this.poundEdge = false;
     this.state.jumpPressed = false;
+    this.state.dashPressed = false;
+    this.state.poundPressed = false;
   }
 }
