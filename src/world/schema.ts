@@ -34,6 +34,8 @@ export interface ContinentMeta {
   seaLevel?: number;
   /** Aesthetic environment settings (sky/fog/sun/water); absent fields use defaults. */
   env?: EnvSettings;
+  /** Per-level movement physics (multipliers over character stats); absent = 1s. */
+  physics?: LevelPhysics;
   /** Kept if any OSM-derived assets are ever used: "Map data © OpenStreetMap contributors". */
   attribution?: string;
 }
@@ -61,6 +63,20 @@ export interface EnvSettings {
   /** Water plane tint + opacity (used when meta.seaLevel is set). */
   waterColor?: Vec3;
   waterOpacity?: number;
+}
+
+/**
+ * Level physics — movement multipliers layered over the character's stats, so
+ * feel can change level to level (moon level, speed level, floaty sky level…)
+ * without touching the characters. Gravity itself lives in meta.gravity.
+ */
+export interface LevelPhysics {
+  /** Run/dash speed multiplier (0.25..3, default 1). */
+  runMultiplier?: number;
+  /** Jump (and double-jump/wall-jump) velocity multiplier (0.25..2.5, default 1). */
+  jumpMultiplier?: number;
+  /** Air steering (0..1, default 1 — 0 is fully committed jumps). */
+  airControl?: number;
 }
 
 /** One stop of the terrain elevation color ramp. */
@@ -98,9 +114,11 @@ export interface PrefabInstance {
   scale: Vec3;
   /** Optional RGB tint (0..1) multiplied into the prefab's base color. */
   tint?: Vec3;
+  /** Material skin ("brick", "planks", "stone"…); omitted = flat color. */
+  skin?: string;
   /** Collider override; omitted/"auto" uses the prefab's default collider. */
   collider?: ColliderKind;
-  /** Per-instance parameters (e.g. moving-platform speed, prefab-specific dims). */
+  /** Per-instance parameters (e.g. moving-platform axis/dist/speed, spring power). */
   props?: Record<string, unknown>;
 }
 

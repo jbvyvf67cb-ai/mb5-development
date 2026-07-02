@@ -31,6 +31,11 @@ editor. It is intentionally simple and flat so it is easy to generate.
     "gravity": [0,-16,0],            // optional, this is the default
     "killPlaneY": -40,               // optional; fall below = respawn
     "seaLevel": 0,                   // optional; renders a translucent water plane at this Y
+    "physics": {                     // optional per-level movement feel (multiplies character stats)
+      "runMultiplier": 1,            // 0.25..3
+      "jumpMultiplier": 1,           // 0.25..2.5
+      "airControl": 1                // 0..1
+    },
     "env": {                         // optional aesthetics — all fields optional (see Style tab)
       "sky": [0.4,0.66,0.9],         // background color
       "horizon": [0.5,0.45,0.38],    // ground-bounce tint of the sky light
@@ -86,8 +91,9 @@ the instance.
   "rot":   [0, 0, 0],         // Euler radians, XYZ
   "scale": [6, 0.6, 6],       // size multipliers (meters, since base mesh is unit)
   "tint":  [0.6, 0.8, 1.0],   // optional RGB 0..1, multiplies the base color
+  "skin": "brick",            // optional material style: brick|planks|stone|checker|metal|grass|candy
   "collider": "auto",         // optional; "auto" uses the prefab default
-  "props": {}                 // optional, reserved for per-instance params
+  "props": { "axis": "x", "dist": 6, "speed": 2 }  // per-instance gameplay tuning (see below)
 }
 ```
 
@@ -116,6 +122,16 @@ place; reuse it as a sensible starting size when converting:
 | `crate`    | cube (prop)                   | box              | `[2, 2, 2]`    |
 | `fence`    | posts + rails                 | box              | `[4, 1.6, 0.3]`|
 | `ring`     | glowing torus                 | mesh             | `[4, 4, 4]`    |
+| `spring`   | 🎮 launches the player up      | box              | `[1.6, 1.1, 1.6]` |
+| `boost`    | 🎮 speed pad (aim via rot[1])  | box              | `[3, 0.5, 3]`  |
+| `spikes`   | 🎮 hazard — respawn on touch   | box              | `[2.5, 1, 2.5]`|
+| `movingPlatform` | 🎮 back-and-forth platform | box            | `[4, 0.6, 4]`  |
+| `goal`     | 🎮 level-complete flag         | box              | `[1.5, 4, 1.5]`|
+
+**Gameplay props** (per instance, edited in the Inspector):
+`spring.power` (launch velocity, default ≈19), `boost.power` (speed, default 24),
+`movingPlatform.axis` (`"x"|"y"|"z"`) + `dist` (m) + `speed` (m/s). Moving
+platforms carry the player; springs refresh air moves like a fresh jump.
 
 - A `ramp` rises from its low edge (−Z) to its high edge (+Z); rotate via
   `rot[1]` (Y) to point it. `scale = [width, rise, run]`.

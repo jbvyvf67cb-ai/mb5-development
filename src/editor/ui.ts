@@ -12,6 +12,7 @@ import { allPrefabs } from "../world/prefabs";
 import type { BrushMode, Editor, GizmoMode, Selection, Tool } from "./editor";
 import { loadConfig, loadToken, publishLevel, saveConfig, saveToken } from "./publish";
 import { activeCharacterId, allCharacters, setActiveCharacter } from "../character/store";
+import { SKINS } from "../world/skins";
 import { buildAssistPanel } from "../ai/panel";
 import type { LevelOp } from "../ai/ops";
 import {
@@ -27,6 +28,7 @@ export interface EditorHost {
   togglePlay(): void;
   isPlaying(): boolean;
   setMeta(patch: { name?: string; gravityY?: number; killPlaneY?: number }): void;
+  setPhysics(patch: Partial<import("../world/schema").LevelPhysics>): void;
   setSeaLevel(v: number | undefined): void;
   setEnv(patch: Partial<EnvSettings>): void;
   getEnv(): Required<EnvSettings>;
@@ -334,8 +336,15 @@ export class EditorUI {
     const meta = this.host.data.meta;
     heading("Level", box);
     textField("Name", meta.name, (v) => this.host.setMeta({ name: v }), box);
-    numField("Gravity Y", meta.gravity?.[1] ?? -16, (v) => this.host.setMeta({ gravityY: v }), box);
     numField("Kill plane Y", meta.killPlaneY ?? -40, (v) => this.host.setMeta({ killPlaneY: v }), box);
+
+    heading("Physics", box);
+    numField("Gravity Y", meta.gravity?.[1] ?? -16, (v) => this.host.setMeta({ gravityY: v }), box);
+    const phys = meta.physics ?? {};
+    slider("Run speed ×", 0.25, 3, 0.05, phys.runMultiplier ?? 1, (v) => this.host.setPhysics({ runMultiplier: v }), box);
+    slider("Jump power ×", 0.25, 2.5, 0.05, phys.jumpMultiplier ?? 1, (v) => this.host.setPhysics({ jumpMultiplier: v }), box);
+    slider("Air control", 0, 1, 0.05, phys.airControl ?? 1, (v) => this.host.setPhysics({ airControl: v }), box);
+    hint("Multipliers over the character's stats — feel can differ per level (low gravity, speed stages…). Applies on the next Play.", box);
 
     heading("Water", box);
     const seaOn = meta.seaLevel !== undefined;
@@ -645,12 +654,20 @@ export class EditorUI {
       vecRow("scale", sel.scale, commit, box);
       colorField("Tint", sel.tint ?? [1, 1, 1], (c) => this.host.editor.setSelectedTint(c), box);
       selectField(
+        "Skin",
+        SKINS.map((s) => ({ value: s, label: cap(s) })),
+        sel.skin ?? "default",
+        (v) => this.host.editor.setSelectedSkin(v),
+        box,
+      );
+      selectField(
         "Collider",
         COLLIDERS.map((c) => ({ value: c, label: c })),
         sel.collider ?? "auto",
         (v) => this.host.editor.setSelectedCollider(v as ColliderKind),
         box,
       );
+      this.buildPropsEditor(box, sel);
     }
     const bRow = row(box);
     bRow.style.marginTop = "8px";
@@ -658,6 +675,43 @@ export class EditorUI {
     btn("Focus", () => this.host.editor.focusSelected(), "", bRow);
     btn("Delete", () => this.host.editor.deleteSelected(), "danger", bRow);
     this.updateStats();
+  }
+
+  /** Hide/show ALL build chrome (used by the Characters tab / design mode). */
+  setHidden(hidden: boolean) {
+    for (const c of this.chrome) c.classList.toggle("mb5-hidden", hidden);
+    this.topbar.classList.toggle("mb5-hidden", hidden);
+  }
+
+  /** Gameplay-prefab tuning fields (moving platform path, spring/boost power). */
+  private buildPropsEditor(box: HTMLElement, sel: Selection) {
+    const props = sel.props ?? {};
+    const set = (patch: Record<string, unknown>) => this.host.editor.setSelectedProps(patch);
+    const numOf = (v: unknown, d: number) => (typeof v === "number" && isFinite(v) ? v : d);
+    if (sel.label === "movingPlatform") {
+      heading("Motion", box);
+      selectField(
+        "Axis",
+        [
+          { value: "x", label: "X (east-west)" },
+          { value: "y", label: "Y (up-down)" },
+          { value: "z", label: "Z (north-south)" },
+        ],
+        typeof props.axis === "string" ? (props.axis as string) : "x",
+        (v) => set({ axis: v }),
+        box,
+      );
+      numField("Distance (m)", numOf(props.dist, 6), (v) => set({ dist: Math.max(0.5, v) }), box);
+      numField("Speed (m/s)", numOf(props.speed, 2), (v) => set({ speed: Math.max(0.1, v) }), box, 0.5);
+      hint("Moves back and forth from its placed position. Applies on the next Play.", box);
+    } else if (sel.label === "spring") {
+      heading("Spring", box);
+      numField("Launch power", numOf(props.power, 19), (v) => set({ power: Math.max(2, v) }), box);
+    } else if (sel.label === "boost") {
+      heading("Boost", box);
+      numField("Boost speed", numOf(props.power, 24), (v) => set({ power: Math.max(2, v) }), box);
+      hint("Boosts along the pad's facing (rotate the pad to aim it).", box);
+    }
   }
 
   // ------------------------------------------------- play-mode chrome

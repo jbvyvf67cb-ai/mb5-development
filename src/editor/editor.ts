@@ -19,6 +19,7 @@ import {
   removeEntityCmd,
   removePrefabCmd,
   sculptCmd,
+  skinPrefabCmd,
   tintPrefabCmd,
   transformPrefabCmd,
   type Transform,
@@ -37,6 +38,8 @@ export interface Selection {
   scale: [number, number, number];
   tint?: [number, number, number];
   collider?: ColliderKind;
+  skin?: string;
+  props?: Record<string, unknown>;
 }
 
 export class Editor {
@@ -250,6 +253,22 @@ export class Editor {
     this.world.setPrefabCollider(inst.id, kind);
     this.history.push(colliderPrefabCmd(this.world, inst.id, before, kind));
     this.emitSelection();
+  }
+
+  setSelectedSkin(skin: string) {
+    if (this.selected?.kind !== "prefab") return;
+    const inst = this.world.getPrefabInstance(this.selected.id);
+    if (!inst) return;
+    const before = inst.skin ?? "default";
+    this.world.setPrefabSkin(inst.id, skin);
+    this.history.push(skinPrefabCmd(this.world, inst.id, before, skin));
+    this.emitSelection();
+  }
+
+  /** Update per-instance gameplay props (no history — tuning values). */
+  setSelectedProps(patch: Record<string, unknown>) {
+    if (this.selected?.kind !== "prefab") return;
+    this.world.setPrefabProps(this.selected.id, patch);
   }
 
   // --- pointer ---
@@ -500,6 +519,8 @@ export class Editor {
       scale: [round(mesh.scaling.x), round(mesh.scaling.y), round(mesh.scaling.z)],
       ...(inst ? { tint: (inst.tint ?? [1, 1, 1]) as [number, number, number] } : {}),
       ...(inst ? { collider: inst.collider ?? "auto" } : {}),
+      ...(inst ? { skin: inst.skin ?? "default" } : {}),
+      ...(inst?.props ? { props: inst.props } : {}),
     });
   }
 }

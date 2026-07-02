@@ -31,6 +31,7 @@ import type {
 } from "./schema";
 import { DEFAULT_ENV, DEFAULT_GRAVITY } from "./schema";
 import { getPrefab } from "./prefabs";
+import { skinMaterial, type SkinKey } from "./skins";
 import { buildTerrain, terrainGeometry, type TerrainMesh } from "./terrain";
 
 export interface ContinentResult {
@@ -279,11 +280,7 @@ export class World implements ContinentResult {
     mesh.rotation.set(inst.rot[0], inst.rot[1], inst.rot[2]);
     mesh.scaling.set(inst.scale[0], inst.scale[1], inst.scale[2]);
 
-    const tint = inst.tint ?? [1, 1, 1];
-    mesh.material = this.material(
-      [def.baseColor[0] * tint[0], def.baseColor[1] * tint[1], def.baseColor[2] * tint[2]],
-      def.glow ?? 0,
-    );
+    this.applyPrefabMaterial(mesh, inst);
     mesh.metadata = { instanceId: inst.id, prefab: inst.prefab };
     this.prefabMeshes.set(inst.id, mesh);
     this.rebuildCollider(inst.id);
@@ -311,7 +308,7 @@ export class World implements ContinentResult {
   addPrefab(
     prefab: string,
     pos: Vec3,
-    opts: { rot?: Vec3; scale?: Vec3; tint?: Vec3; collider?: ColliderKind } = {},
+    opts: { rot?: Vec3; scale?: Vec3; tint?: Vec3; skin?: string; collider?: ColliderKind } = {},
   ): PrefabInstance {
     const def = getPrefab(prefab);
     const inst: PrefabInstance = {
@@ -321,6 +318,7 @@ export class World implements ContinentResult {
       rot: opts.rot ?? [0, 0, 0],
       scale: opts.scale ?? (def?.defaultScale ?? [1, 1, 1]),
       ...(opts.tint ? { tint: opts.tint } : {}),
+      ...(opts.skin && opts.skin !== "default" ? { skin: opts.skin } : {}),
       ...(opts.collider ? { collider: opts.collider } : {}),
     };
     return this.addPrefabInstance(inst);
@@ -351,18 +349,49 @@ export class World implements ContinentResult {
     this.rebuildCollider(id);
   }
 
-  /** Recolor a prefab (tint multiplies its base color). */
+  /** Resolve an instance's material: skin texture if set, flat color otherwise. */
+  private applyPrefabMaterial(mesh: Mesh, inst: PrefabInstance) {
+    const def = getPrefab(inst.prefab);
+    const tint = inst.tint ?? [1, 1, 1];
+    const base = def?.baseColor ?? [1, 1, 1];
+    const rgb: Vec3 = [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]];
+    const glow = def?.glow ?? 0;
+    mesh.material =
+      inst.skin && inst.skin !== "default"
+        ? skinMaterial(this.scene, inst.skin as SkinKey, rgb, glow)
+        : this.material(rgb, glow);
+  }
+
+  /** Recolor a prefab (tint multiplies its base color; skins re-derive too). */
   setPrefabTint(id: string, tint: Vec3) {
     const mesh = this.prefabMeshes.get(id);
     const inst = this.getPrefabInstance(id);
     if (!mesh || !inst) return;
     inst.tint = [...tint];
-    const def = getPrefab(inst.prefab);
-    const base = def?.baseColor ?? [1, 1, 1];
-    mesh.material = this.material(
-      [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]],
-      def?.glow ?? 0,
-    );
+    this.applyPrefabMaterial(mesh, inst);
+  }
+
+  /** Change a prefab's material skin. */
+  setPrefabSkin(id: string, skin: string) {
+    const mesh = this.prefabMeshes.get(id);
+    const inst = this.getPrefabInstance(id);
+    if (!mesh || !inst) return;
+    if (skin === "default") delete inst.skin;
+    else inst.skin = skin;
+    this.applyPrefabMaterial(mesh, inst);
+  }
+
+  /** Update a prefab's props (moving platform path, spring power…). */
+  setPrefabProps(id: string, patch: Record<string, unknown>) {
+    const inst = this.getPrefabInstance(id);
+    if (!inst) return;
+    inst.props = { ...(inst.props ?? {}), ...patch };
+  }
+
+  /** Let an animated static (moving platform) drag its physics body along. */
+  setKinematic(id: string, on: boolean) {
+    const agg = this.aggregates.get(id);
+    if (agg) agg.body.disablePreStep = !on;
   }
 
   /** Change a prefab's collider kind. */

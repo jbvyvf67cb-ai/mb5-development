@@ -5,13 +5,21 @@
 import { btn, div, hint, txt } from "../editor/widgets";
 import { loadApiKey, saveApiKey } from "./assist";
 
+export interface AssistImage {
+  /** Base64 payload (no data: prefix). */
+  data: string;
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+}
+
 export interface AssistPanelOpts {
   title?: string;
   placeholder: string;
   /** Run the prompt; resolve to log lines to show (first line is the headline). */
-  onPrompt: (prompt: string) => Promise<string[]>;
+  onPrompt: (prompt: string, image?: AssistImage) => Promise<string[]>;
   /** Fixed bottom-right floating card (Build mode) vs inline block (designer). */
   floating?: boolean;
+  /** Show a 📷 attach button (image + prompt → generation). */
+  withImage?: boolean;
 }
 
 export function buildAssistPanel(opts: AssistPanelOpts): HTMLDivElement {
@@ -75,6 +83,43 @@ export function buildAssistPanel(opts: AssistPanelOpts): HTMLDivElement {
   const row = div("", body);
   row.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:5px";
   const go = btn("Generate", () => submit(), "primary", row);
+
+  // optional image attachment (drawing/photo/reference → generation)
+  let image: AssistImage | undefined;
+  let thumb: HTMLImageElement | null = null;
+  const setImage = (img: AssistImage | undefined, url?: string) => {
+    image = img;
+    if (thumb) {
+      thumb.style.display = img ? "inline-block" : "none";
+      if (url) thumb.src = url;
+    }
+  };
+  if (opts.withImage) {
+    const attach = btn("📷", () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/png,image/jpeg,image/webp,image/gif";
+      input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const url = reader.result as string;
+          const mediaType = (file.type || "image/png") as AssistImage["mediaType"];
+          setImage({ data: url.slice(url.indexOf(",") + 1), mediaType }, url);
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    }, "", row);
+    attach.title = "Attach an image (a drawing, a photo, a reference character)";
+    thumb = document.createElement("img");
+    thumb.style.cssText = "width:26px;height:26px;object-fit:cover;border-radius:5px;border:1px solid #303650;display:none;cursor:pointer";
+    thumb.title = "Click to remove the image";
+    thumb.onclick = () => setImage(undefined);
+    row.appendChild(thumb);
+  }
+
   const status = hint("", row);
   status.style.marginTop = "0";
 
@@ -102,7 +147,8 @@ export function buildAssistPanel(opts: AssistPanelOpts): HTMLDivElement {
     go.disabled = true;
     status.textContent = "thinking…";
     try {
-      const lines = await opts.onPrompt(prompt);
+      const lines = await opts.onPrompt(prompt, image);
+      setImage(undefined);
       status.textContent = "✓";
       const entry = div("", log);
       entry.style.cssText = "border-top:1px solid #262a3a;padding:4px 0";

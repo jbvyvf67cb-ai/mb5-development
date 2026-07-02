@@ -23,7 +23,7 @@ import { PlaySession } from "./game/play";
 
 export const SAVE_KEY = "mb5.level";
 
-export type Mode = "edit" | "play";
+export type Mode = "edit" | "play" | "design" | "designtest";
 
 export class App {
   world: World;
@@ -36,6 +36,10 @@ export class App {
   private player?: PlayerController;
   private avatar?: SpriteAvatar;
   private session?: PlaySession;
+  private designer?: import("./character/designer").DesignerMode;
+  private savedCam?: { alpha: number; beta: number; radius: number; target: Vector3 };
+  private designSpawn = new Vector3(0, 503, 0);
+  private designKillY = 488;
   private camera: ArcRotateCamera;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private historyChanged = () => {
@@ -65,6 +69,11 @@ export class App {
       togglePlay: () => self.toggleMode(),
       isPlaying: () => self.mode === "play",
       setMeta: (p) => self.setMeta(p),
+      setPhysics: (p) => {
+        const m = self.world.data.meta;
+        m.physics = { ...(m.physics ?? {}), ...p };
+        self.scheduleSave();
+      },
       setSeaLevel: (v) => {
         self.world.setSeaLevel(v);
         self.scheduleSave();
@@ -114,6 +123,10 @@ export class App {
   }
 
   private onKeyDown(e: KeyboardEvent) {
+    if (this.mode === "design" || this.mode === "designtest") {
+      if (e.code === "Escape" && this.mode === "designtest") this.stopDesignTest();
+      return;
+    }
     if (e.code === "Tab") {
       e.preventDefault();
       this.toggleMode();
@@ -155,7 +168,7 @@ export class App {
 
   private update() {
     const dt = Math.min(this.scene.getEngine().getDeltaTime() / 1000, 0.1);
-    if (this.mode === "play" && this.player) {
+    if ((this.mode === "play" || this.mode === "designtest") && this.player) {
       this.input.poll();
       const camYaw = -this.camera.alpha - Math.PI / 2;
       this.player.update(dt, this.input.state, camYaw);
@@ -169,8 +182,14 @@ export class App {
       this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, 1, 0);
 
       this.avatar?.update(dt, this.camera);
-      this.session?.update(dt);
+      if (this.mode === "designtest") {
+        if (this.player.position.y < this.designKillY) this.player.teleport(this.designSpawn);
+      } else {
+        this.session?.update(dt);
+      }
       this.input.consume();
+    } else if (this.mode === "design") {
+      this.designer?.tick(dt);
     }
     // Distance-cull only while playing; the editor must always show everything.
     if (this.mode === "play") this.world.updateCulling(this.camera.position);
@@ -251,19 +270,86 @@ export class App {
     });
   }
 
-  /** Switch to the character designer (built as its own overlay mode). */
+  /** Switch to the Characters tab (a real mode — Build ⇄ Characters). */
   openDesigner() {
-    void import("./character/designer").then(({ openDesigner }) =>
-      openDesigner({
-        // "Use in Play": close the designer and immediately play the current
-        // level as that character — the design → playtest loop in one click.
-        onUse: () => {
+    void this.enterDesign();
+  }
+
+  private async enterDesign() {
+    if (this.mode === "play") this.exitPlay();
+    if (this.mode !== "edit") return;
+    this.mode = "design";
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    this.editor.disable();
+    this.ui.setHidden(true);
+    this.world.root.setEnabled(false); // the stage lives at y≈500, world physics can't reach
+    this.savedCam = {
+      alpha: this.camera.alpha,
+      beta: this.camera.beta,
+      radius: this.camera.radius,
+      target: this.camera.target.clone(),
+    };
+    if (!this.designer) {
+      const { DesignerMode } = await import("./character/designer");
+      this.designer = new DesignerMode({
+        scene: this.scene,
+        camera: this.camera,
+        switchToBuild: () => this.exitDesign(),
+        useInPlay: () => {
+          this.exitDesign();
           this.ui.refreshCharacter();
-          if (this.mode === "edit") this.toggleMode();
+          this.toggleMode();
         },
-        onClose: () => this.ui.refreshCharacter(),
-      }),
-    );
+        startTest: (ch, spawn, killY) => this.startDesignTest(ch, spawn, killY),
+        stopTest: () => this.stopDesignTest(),
+      });
+    }
+    this.designer.show();
+  }
+
+  private exitDesign() {
+    if (this.mode === "designtest") this.stopDesignTest();
+    if (this.mode !== "design") return;
+    this.designer?.hide();
+    this.world.root.setEnabled(true);
+    if (this.savedCam) {
+      this.camera.alpha = this.savedCam.alpha;
+      this.camera.beta = this.savedCam.beta;
+      this.camera.radius = this.savedCam.radius;
+      this.camera.setTarget(this.savedCam.target);
+    }
+    this.ui.setHidden(false);
+    this.ui.refreshCharacter();
+    this.editor.enable();
+    this.mode = "edit";
+  }
+
+  /** Test drive on the designer stage: the real controller, default physics. */
+  private startDesignTest(ch: import("./character/schema").CharacterData, spawn: Vector3, killY: number) {
+    if (this.mode !== "design") return;
+    this.mode = "designtest";
+    this.designSpawn = spawn.clone();
+    this.designKillY = killY;
+    this.player = new PlayerController(this.scene, spawn, ch);
+    this.avatar = new SpriteAvatar(this.scene, this.player, ch);
+    this.input.attach();
+    this.hud.setCharacter(ch);
+    this.hud.show();
+    this.camera.radius = 10.5;
+    this.camera.beta = 1.05;
+    this.camera.target.copyFrom(spawn);
+  }
+
+  private stopDesignTest() {
+    if (this.mode !== "designtest") return;
+    this.input.detach();
+    this.hud.hide();
+    this.avatar?.dispose();
+    this.avatar = undefined;
+    this.player?.dispose();
+    this.player = undefined;
+    this.mode = "design";
+    this.designer?.onTestStopped();
   }
 
   newLevel() {
@@ -345,7 +431,12 @@ export class App {
     this.ui.setMode(true);
     const character = activeCharacter();
     toast(`Playing as ${character.name} — WASD + Space · Tab to edit`, "ok");
-    this.player = new PlayerController(this.scene, spawnPoint(this.world.data), character);
+    this.player = new PlayerController(
+      this.scene,
+      spawnPoint(this.world.data),
+      character,
+      this.world.data.meta.physics ?? {},
+    );
     this.avatar = new SpriteAvatar(this.scene, this.player, character);
     this.input.attach();
     this.session = new PlaySession(this.scene, this.world, this.state, this.player);

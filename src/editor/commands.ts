@@ -100,6 +100,14 @@ export function tintPrefabCmd(world: World, id: string, before: Vec3, after: Vec
   };
 }
 
+export function skinPrefabCmd(world: World, id: string, before: string, after: string): Command {
+  return {
+    label: "skin",
+    undo: () => world.setPrefabSkin(id, before),
+    redo: () => world.setPrefabSkin(id, after),
+  };
+}
+
 export function colliderPrefabCmd(
   world: World,
   id: string,

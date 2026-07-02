@@ -7,7 +7,9 @@
 
 import type { Mesh, Scene } from "@babylonjs/core";
 import { Color3, MeshBuilder, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { toast } from "../editor/widgets";
 import type { GameState } from "./state";
+import type { PrefabInstance } from "../world/schema";
 import type { World } from "../world/world";
 import type { PlayerController } from "../player/controller";
 import { spawnPoint } from "../world/world";
@@ -15,12 +17,35 @@ import { spawnPoint } from "../world/world";
 const COIN_RADIUS = 1.6;
 const CHECKPOINT_RADIUS = 2.2;
 
+interface Pad {
+  inst: PrefabInstance;
+  mesh: Mesh;
+  cooldown: number;
+}
+
+interface Mover {
+  inst: PrefabInstance;
+  mesh: Mesh;
+  base: Vector3;
+  axis: Vector3;
+  dist: number;
+  speed: number;
+  t: number;
+  last: Vector3;
+}
+
 export class PlaySession {
   respawn: Vector3;
   private collected = new Set<string>();
   private coins: Array<{ id: string; pos: Vector3 }> = [];
   private checkpoints: Array<{ id: string; pos: Vector3 }> = [];
   private effects: Array<{ mesh: Mesh; t: number }> = [];
+  private springs: Pad[] = [];
+  private boosts: Pad[] = [];
+  private spikes: Pad[] = [];
+  private goals: Pad[] = [];
+  private movers: Mover[] = [];
+  private won = false;
 
   constructor(
     private scene: Scene,
@@ -33,6 +58,33 @@ export class PlaySession {
       const pos = new Vector3(ent.pos[0], ent.pos[1], ent.pos[2]);
       if (ent.type === "coin") this.coins.push({ id: ent.id, pos });
       else if (ent.type === "checkpoint") this.checkpoints.push({ id: ent.id, pos });
+    }
+
+    // gameplay prefabs become live objects for this run
+    for (const inst of world.data.prefabs) {
+      const mesh = world.prefabMeshes.get(inst.id);
+      if (!mesh) continue;
+      const pad: Pad = { inst, mesh, cooldown: 0 };
+      if (inst.prefab === "spring") this.springs.push(pad);
+      else if (inst.prefab === "boost") this.boosts.push(pad);
+      else if (inst.prefab === "spikes") this.spikes.push(pad);
+      else if (inst.prefab === "goal") this.goals.push(pad);
+      else if (inst.prefab === "movingPlatform") {
+        const p = inst.props ?? {};
+        const axisName = typeof p.axis === "string" ? p.axis : "x";
+        const axis = axisName === "y" ? new Vector3(0, 1, 0) : axisName === "z" ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
+        this.movers.push({
+          inst,
+          mesh,
+          base: mesh.position.clone(),
+          axis,
+          dist: typeof p.dist === "number" ? p.dist : 6,
+          speed: typeof p.speed === "number" ? p.speed : 2,
+          t: 0,
+          last: mesh.position.clone(),
+        });
+        world.setKinematic(inst.id, true); // body follows the animated mesh
+      }
     }
     state.resetRun();
   }
@@ -89,11 +141,86 @@ export class PlaySession {
       }
     }
 
+    // --- gameplay prefabs ---
+    const onPad = (pad: Pad, xzSlack = 0.7, yBelow = 0.6, yAbove = 1.6): boolean => {
+      const m = pad.mesh;
+      const hw = (m.scaling.x / 2) * 1 + xzSlack;
+      const hd = (m.scaling.z / 2) * 1 + xzSlack;
+      const top = m.position.y + m.scaling.y / 2;
+      const feet = p.y - this.player.mv.capsuleHeight / 2;
+      return (
+        Math.abs(p.x - m.position.x) < hw &&
+        Math.abs(p.z - m.position.z) < hd &&
+        feet > top - yBelow &&
+        feet < top + yAbove
+      );
+    };
+
+    for (const s of this.springs) {
+      s.cooldown = Math.max(0, s.cooldown - dt);
+      if (s.cooldown <= 0 && onPad(s)) {
+        const power = num(s.inst.props?.power, 15 + 4 * s.mesh.scaling.y);
+        this.player.bounce(power);
+        s.cooldown = 0.4;
+        this.shockwave(s.mesh.position.clone().addInPlaceFromFloats(0, s.mesh.scaling.y / 2, 0));
+      }
+    }
+    for (const b of this.boosts) {
+      b.cooldown = Math.max(0, b.cooldown - dt);
+      if (b.cooldown <= 0 && onPad(b)) {
+        const power = num(b.inst.props?.power, 24);
+        const yaw = b.inst.rot[1];
+        this.player.impulse(Math.sin(yaw) * power, Math.cos(yaw) * power);
+        b.cooldown = 0.5;
+      }
+    }
+    for (const s of this.spikes) {
+      if (onPad(s, 0.2, 0.4, 0.9)) {
+        this.player.teleport(this.respawn);
+        break;
+      }
+    }
+    for (const g of this.goals) {
+      if (!this.won && Vector3.DistanceSquared(p, g.mesh.position) < 9) {
+        this.won = true;
+        toast(`🏁 ${this.world.data.meta.name}: complete! (${this.state.coins} coins)`, "ok", 5000);
+      }
+    }
+
+    // moving platforms: animate, drag physics body, carry the player
+    for (const mv of this.movers) {
+      mv.t += dt;
+      const omega = mv.speed / Math.max(0.5, mv.dist / 2);
+      const off = (mv.dist / 2) * Math.sin(mv.t * omega);
+      const next = mv.base.add(mv.axis.scale(off));
+      const delta = next.subtract(mv.mesh.position);
+      mv.mesh.position.copyFrom(next);
+      // carry: standing on it (grounded, feet near its top, inside footprint)
+      const top = next.y + mv.mesh.scaling.y / 2;
+      const feet = p.y - this.player.mv.capsuleHeight / 2;
+      if (
+        this.player.grounded &&
+        Math.abs(p.x - next.x) < mv.mesh.scaling.x / 2 + 0.5 &&
+        Math.abs(p.z - next.z) < mv.mesh.scaling.z / 2 + 0.5 &&
+        feet > top - 0.8 &&
+        feet < top + 0.8
+      ) {
+        this.player.nudge(delta);
+      }
+      mv.last.copyFrom(next);
+    }
+
     const killY = this.world.data.meta.killPlaneY ?? -40;
     if (p.y < killY) this.player.teleport(this.respawn);
   }
 
   dispose() {
+    // restore moving platforms to their authored spot for editing
+    for (const mv of this.movers) {
+      mv.mesh.position.copyFrom(mv.base);
+      this.world.setKinematic(mv.inst.id, false);
+      this.world.syncPrefabFromMesh(mv.inst.id);
+    }
     // restore collected coin markers for editing
     for (const id of this.collected) this.world.entityMeshes.get(id)?.setEnabled(true);
     this.collected.clear();
@@ -103,4 +230,8 @@ export class PlaySession {
     }
     this.effects.length = 0;
   }
+}
+
+function num(v: unknown, d: number): number {
+  return typeof v === "number" && isFinite(v) ? v : d;
 }

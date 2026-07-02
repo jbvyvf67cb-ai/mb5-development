@@ -97,6 +97,7 @@ function normPrefab(raw: unknown): PrefabInstance | null {
     scale: vec3(p.scale, (def?.defaultScale ?? [1, 1, 1]) as Vec3),
   };
   if (Array.isArray(p.tint)) inst.tint = vec3(p.tint, [1, 1, 1]);
+  if (typeof p.skin === "string" && p.skin !== "default") inst.skin = p.skin;
   if (typeof p.collider === "string") inst.collider = p.collider as PrefabInstance["collider"];
   if (p.props && typeof p.props === "object") inst.props = p.props as Record<string, unknown>;
   return inst;
@@ -176,6 +177,16 @@ export function normalizeContinent(raw: unknown): ContinentData {
       ...(() => {
         const env = normEnv(metaRaw.env);
         return env ? { env } : {};
+      })(),
+      ...(() => {
+        const p = metaRaw.physics;
+        if (!p || typeof p !== "object") return {};
+        const src = p as Loose;
+        const physics: Record<string, number> = {};
+        if (typeof src.runMultiplier === "number") physics.runMultiplier = Math.min(3, Math.max(0.25, src.runMultiplier));
+        if (typeof src.jumpMultiplier === "number") physics.jumpMultiplier = Math.min(2.5, Math.max(0.25, src.jumpMultiplier));
+        if (typeof src.airControl === "number") physics.airControl = Math.min(1, Math.max(0, src.airControl));
+        return Object.keys(physics).length ? { physics } : {};
       })(),
     },
     prefabs,

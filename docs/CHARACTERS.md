@@ -1,12 +1,19 @@
 # Characters — format & designer
 
-Characters are sprite-based and fully data-driven: a `CharacterData` JSON
-describes body morphs, colors, stats, and equipped special moves. The pixel
-sprite is drawn **procedurally** from those numbers (no sprite sheets), so any
-slider change reshapes every animation frame consistently, and the same data
-drives the physics capsule and movement feel in Play mode.
+Characters are fully data-driven: a `CharacterData` JSON describes body
+morphs, colors, stats, and equipped special moves. The character's **3D body
+is built procedurally** from those numbers (`src/character/rig.ts` — a blocky
+jointed rig with code-driven animations, no skeletal assets), so any slider
+change reshapes the model and every animation consistently, and the same data
+drives the physics capsule and movement feel in Play mode. AI-generated
+characters (text or image) land on the same parameters, which is what keeps
+their movement smooth and identical to hand-made ones.
 
-Open the designer from the top bar: **Characters**.
+Open the designer from the top bar: **Characters** (a real tab — switch back
+and forth with **Build**). The character stands on a live 3D stage; pose chips
+preview each animation, and **🧪 Test Drive** drops the real player controller
+onto the same stage so you can feel the speed, jumps, and moves before using
+the character in a level.
 
 ## The format
 
@@ -62,9 +69,20 @@ automatically when edited; user characters autosave to the browser
 (`localStorage`), and can be exported/imported as JSON. **Use in Play** sets
 the active character that Play mode spawns.
 
-## The sprite
+## AI generation (text and image)
 
-Drawn front-facing at 48×60 logical pixels (`src/character/sprite.ts`), poses:
-idle ×2, run ×4, jump, fall, dash, pound, glide. In-world it renders as a
-Y-billboarded plane with nearest-neighbor upscaling (Paper-Mario style),
-mirrored when running screen-left.
+The designer's ✨ Assist box takes a description ("a tall lanky purple rabbit,
+fast but fragile, can glide") and/or an attached **image** (📷 — a drawing, a
+photo, a reference character). Claude maps it onto the parametric rig —
+proportions → morphs, palette → the four colors, closest accessory, implied
+stats and moves — then you tune the result with the sliders. Needs the
+browser-local Anthropic API key (same panel).
+
+## The 3D rig
+
+`src/character/rig.ts` builds ~20 boxes (body, head, ears, muzzle, eyes,
+jointed arms/legs, feet, accessory) sized by the morphs and colored by the
+palette. Poses are procedural: run swings limbs with travel speed, jump tucks,
+fall spreads, dash leans, pound stars, glide T-poses — smoothly blended each
+frame. The same rig is the designer preview, the Test Drive body, and the
+in-level player avatar.

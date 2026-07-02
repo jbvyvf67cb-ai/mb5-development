@@ -13,6 +13,7 @@ import type { AbstractMesh, Scene } from "@babylonjs/core";
 import { Vector3 } from "@babylonjs/core";
 import type { InputState } from "../core/input";
 import { deriveMovement, type CharacterData, type MoveKey } from "../character/schema";
+import type { LevelPhysics } from "../world/schema";
 
 const COYOTE = 0.12;
 const JUMP_BUFFER = 0.12;
@@ -49,7 +50,7 @@ export class PlayerController {
   private airDashUsed = false;
   private dashDirX = 0;
   private dashDirZ = 1;
-  private pounding = false;
+  pounding = false; // read by PlaySession (pound-sensitive objects)
   private down = new Vector3(0, -1, 0);
   private ray = new Ray(Vector3.Zero(), this.down, 1);
 
@@ -57,8 +58,22 @@ export class PlayerController {
     private scene: Scene,
     spawn: Vector3,
     readonly character: CharacterData,
+    physics: LevelPhysics = {},
   ) {
-    this.mv = deriveMovement(character);
+    // Level physics multiply the character's derived numbers, so per-level
+    // feel (moon level, speed level) composes with per-character stats.
+    const base = deriveMovement(character);
+    const run = physics.runMultiplier ?? 1;
+    const jump = physics.jumpMultiplier ?? 1;
+    const air = physics.airControl ?? 1;
+    this.mv = {
+      ...base,
+      runSpeed: base.runSpeed * run,
+      dashSpeed: base.dashSpeed * run,
+      jumpVelocity: base.jumpVelocity * jump,
+      doubleJumpVelocity: base.doubleJumpVelocity * jump,
+      airAccel: base.airAccel * air,
+    };
     this.has = new Set(character.moves);
     this.capsule = MeshBuilder.CreateCapsule(
       "player",
@@ -80,6 +95,31 @@ export class PlayerController {
 
   get position(): Vector3 {
     return this.capsule.position;
+  }
+
+  /** Launch vertically (springs). Refreshes air moves like a fresh jump. */
+  bounce(vy: number) {
+    const v = this.aggregate.body.getLinearVelocity();
+    this.aggregate.body.setLinearVelocity(new Vector3(v.x, vy, v.z));
+    this.pounding = false;
+    this.doubleJumpReady = true;
+    this.airDashUsed = false;
+  }
+
+  /** Set horizontal velocity (boost pads). */
+  impulse(vx: number, vz: number) {
+    const v = this.aggregate.body.getLinearVelocity();
+    this.aggregate.body.setLinearVelocity(new Vector3(vx, v.y, vz));
+    if (Math.hypot(vx, vz) > 0.5) this.facing = Math.atan2(vx, vz);
+  }
+
+  /** Shift position without touching velocity (moving-platform carry). */
+  nudge(delta: Vector3) {
+    this.capsule.position.addInPlace(delta);
+    this.aggregate.body.disablePreStep = false;
+    this.scene.onAfterRenderObservable.addOnce(() => {
+      this.aggregate.body.disablePreStep = true;
+    });
   }
 
   teleport(p: Vector3) {

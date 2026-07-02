@@ -15,7 +15,7 @@ import type { ColliderKind, Vec3 } from "./schema";
 export interface PrefabDef {
   key: string;
   label: string;
-  category: "structure" | "nature" | "prop";
+  category: "structure" | "nature" | "prop" | "gameplay";
   /** Default physics collider for instances of this prefab. */
   collider: Exclude<ColliderKind, "auto">;
   /** Base color (RGB 0..1); instance tint multiplies this. */
@@ -113,6 +113,59 @@ function buildPine(scene: Scene, name: string): Mesh {
   b.box(new Vector3(0, -0.2, 0), new Vector3(0.72, 0.28, 0.72), 0, dark);
   b.box(new Vector3(0, 0.08, 0), new Vector3(0.5, 0.28, 0.5), 0, mid);
   b.box(new Vector3(0, 0.34, 0), new Vector3(0.28, 0.24, 0.28), 0, dark);
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Spring: base slab + coil rings + top pad, unit envelope (centered). */
+function buildSpring(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  const dark = [0.35, 0.32, 0.28, 1];
+  const coil = [0.85, 0.72, 0.25, 1];
+  b.box(new Vector3(0, -0.42, 0), new Vector3(0.9, 0.16, 0.9), 0, dark);
+  for (let i = 0; i < 3; i++) {
+    b.box(new Vector3(0, -0.24 + i * 0.2, 0), new Vector3(0.55 - i * 0.06, 0.09, 0.55 - i * 0.06), i * 0.5, coil);
+  }
+  b.box(new Vector3(0, 0.38, 0), new Vector3(0.8, 0.14, 0.8), 0, [0.95, 0.35, 0.25, 1]);
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Boost pad: flat slab with chevrons pointing +Z (its facing). */
+function buildBoost(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  b.box(new Vector3(0, -0.35, 0), new Vector3(1, 0.3, 1), 0, [0.16, 0.3, 0.38, 1]);
+  const arrow = [0.5, 0.95, 0.9, 1];
+  for (const z of [-0.25, 0.15]) {
+    b.box(new Vector3(-0.14, -0.16, z - 0.09), new Vector3(0.36, 0.1, 0.1), Math.PI / 4.5, arrow);
+    b.box(new Vector3(0.14, -0.16, z - 0.09), new Vector3(0.36, 0.1, 0.1), -Math.PI / 4.5, arrow);
+  }
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Spikes: base slab + pyramid spikes (hazard). */
+function buildSpikes(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  b.box(new Vector3(0, -0.42, 0), new Vector3(1, 0.16, 1), 0, [0.3, 0.28, 0.3, 1]);
+  const spike = [0.82, 0.82, 0.88, 1];
+  const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
+  for (const [cx, cz] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3], [0, 0]]) {
+    const s = 0.16;
+    const base = -0.34;
+    const tip = v(cx, 0.45, cz);
+    const a = v(cx - s, base, cz - s), b2 = v(cx + s, base, cz - s), c = v(cx + s, base, cz + s), d = v(cx - s, base, cz + s);
+    b.tri(a, b2, tip, v(0, 0.4, -1).normalize(), spike);
+    b.tri(b2, c, tip, v(1, 0.4, 0).normalize(), spike);
+    b.tri(c, d, tip, v(0, 0.4, 1).normalize(), spike);
+    b.tri(d, a, tip, v(-1, 0.4, 0).normalize(), spike);
+  }
+  return b.toMesh(name, scene) ?? new Mesh(name, scene);
+}
+
+/** Goal flag: pole + banner. */
+function buildGoal(scene: Scene, name: string): Mesh {
+  const b = new Buf();
+  b.box(new Vector3(0, -0.45, 0), new Vector3(0.5, 0.1, 0.5), 0, [0.4, 0.38, 0.35, 1]);
+  b.box(new Vector3(0, 0, 0), new Vector3(0.07, 1, 0.07), 0, [0.55, 0.55, 0.6, 1]);
+  b.box(new Vector3(0.22, 0.33, 0), new Vector3(0.38, 0.24, 0.03), 0, [1, 0.8, 0.2, 1]);
   return b.toMesh(name, scene) ?? new Mesh(name, scene);
 }
 
@@ -309,6 +362,53 @@ const DEFS: Record<string, PrefabDef> = {
     defaultScale: [4, 4, 4],
     glow: 0.4,
     build: (s, n) => MeshBuilder.CreateTorus(n, { diameter: 1, thickness: 0.12, tessellation: 20 }, s),
+  },
+  spring: {
+    key: "spring",
+    label: "Spring",
+    category: "gameplay",
+    collider: "box",
+    baseColor: [1, 1, 1], // colors baked; tint multiplies
+    defaultScale: [1.6, 1.1, 1.6],
+    build: buildSpring,
+  },
+  boost: {
+    key: "boost",
+    label: "Boost pad",
+    category: "gameplay",
+    collider: "box",
+    baseColor: [1, 1, 1],
+    defaultScale: [3, 0.5, 3],
+    glow: 0.25,
+    build: buildBoost,
+  },
+  spikes: {
+    key: "spikes",
+    label: "Spikes",
+    category: "gameplay",
+    collider: "box",
+    baseColor: [1, 1, 1],
+    defaultScale: [2.5, 1, 2.5],
+    build: buildSpikes,
+  },
+  movingPlatform: {
+    key: "movingPlatform",
+    label: "Moving platform",
+    category: "gameplay",
+    collider: "box",
+    baseColor: [0.7, 0.55, 0.95],
+    defaultScale: [4, 0.6, 4],
+    build: (s, n) => MeshBuilder.CreateBox(n, { size: 1 }, s),
+  },
+  goal: {
+    key: "goal",
+    label: "Goal flag",
+    category: "gameplay",
+    collider: "box",
+    baseColor: [1, 1, 1],
+    glow: 0.2,
+    defaultScale: [1.5, 4, 1.5],
+    build: buildGoal,
   },
 };
 

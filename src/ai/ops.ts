@@ -17,6 +17,8 @@ export interface LevelOp {
   rot?: number[];
   scale?: number[];
   tint?: number[];
+  skin?: string;
+  props?: Record<string, unknown>;
   id?: string;
   env?: Partial<EnvSettings>;
   palette?: PaletteStop[];
@@ -87,7 +89,9 @@ export function applyLevelOps(ops: LevelOp[], ctx: OpsContext): string[] {
             rot: vec3(op.rot, [0, 0, 0]),
             scale,
             ...(op.tint ? { tint: vec3(op.tint, [1, 1, 1]) } : {}),
+            ...(typeof op.skin === "string" ? { skin: op.skin } : {}),
           });
+          if (op.props && typeof op.props === "object") world.setPrefabProps(inst.id, op.props);
           editor.history.push(addPrefabCmd(world, inst));
           log.push(`+ ${def.key} at [${Math.round(x)}, ${Math.round(y)}, ${Math.round(z)}]`);
           break;

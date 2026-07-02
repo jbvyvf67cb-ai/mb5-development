@@ -90,30 +90,54 @@ const CHARACTER_SCHEMA = {
   },
 } as const;
 
-/** Describe a character (or a change to the current one) → CharacterData. */
+export interface PromptImage {
+  data: string; // base64, no data: prefix
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+}
+
+/**
+ * Describe a character (or a change to the current one) → CharacterData.
+ * With an image (a drawing, a photo, a reference character), Claude maps it
+ * onto the parametric rig — proportions, palette, accessory, implied stats —
+ * so the result animates exactly like every hand-made character.
+ */
 export async function generateCharacter(
   prompt: string,
   current: CharacterData,
+  image?: PromptImage,
 ): Promise<CharacterData> {
+  const content: Anthropic.ContentBlockParam[] = [];
+  if (image) {
+    content.push({
+      type: "image",
+      source: { type: "base64", media_type: image.mediaType, data: image.data },
+    });
+  }
+  content.push({
+    type: "text",
+    text:
+      `CURRENT CHARACTER:\n${JSON.stringify(current)}\n\n` +
+      (image
+        ? `REQUEST (based on the attached image): ${prompt || "turn this image into a character"}`
+        : `REQUEST: ${prompt}`),
+  });
+
   const response = await client().messages.create({
     model: MODEL,
     max_tokens: 4096,
     thinking: { type: "adaptive" },
     system:
-      "You design characters for a cute 3D platformer. Characters are pixel-art bear-like " +
-      "sprites with body morphs, colors, an accessory, stats 1-10, and equipped special moves " +
+      "You design characters for a cute 3D platformer. Characters are blocky 3D mascots built " +
+      "from parameters: body morphs (height/width/weight/head/ears), four colors, an accessory, " +
+      "stats 1-10, and equipped special moves " +
       `(${MOVES.map((m) => `${m.key}: ${m.desc}`).join(" · ")}). ` +
-      "The user describes a new character or an adjustment to the CURRENT one. If it reads as " +
-      "an adjustment, keep everything they didn't mention. Stats should reflect the fantasy " +
+      "The user describes a new character or an adjustment to the CURRENT one; if it reads as an " +
+      "adjustment, keep everything they didn't mention. When an image is attached, translate it " +
+      "onto these parameters as faithfully as possible: dominant color → fur, secondary → muzzle/" +
+      "belly, brightest accent → accessory color; tall/thin/round/big-headed/big-eared proportions " +
+      "→ the matching morphs; pick the closest accessory. Stats should reflect the fantasy " +
       "(fast+fragile, heavy+strong...). Colors are RGB 0..1 and should be cohesive.",
-    messages: [
-      {
-        role: "user",
-        content:
-          `CURRENT CHARACTER:\n${JSON.stringify(current)}\n\n` +
-          `REQUEST: ${prompt}`,
-      },
-    ],
+    messages: [{ role: "user", content }],
     output_config: { format: { type: "json_schema", schema: CHARACTER_SCHEMA } },
   });
 
@@ -157,6 +181,22 @@ const OPS_SCHEMA = {
           rot: { type: "array", items: { type: "number" }, description: "Euler radians XYZ" },
           scale: { type: "array", items: { type: "number" }, description: "[sx, sy, sz] meters" },
           tint: VEC3,
+          skin: {
+            type: "string",
+            enum: ["default", "brick", "planks", "stone", "checker", "metal", "grass", "candy"],
+            description: "addPrefab: material style",
+          },
+          props: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              axis: { type: "string", enum: ["x", "y", "z"], description: "movingPlatform travel axis" },
+              dist: { type: "number", description: "movingPlatform travel distance (m)" },
+              speed: { type: "number", description: "movingPlatform speed (m/s)" },
+              power: { type: "number", description: "spring launch / boost speed" },
+            },
+            description: "addPrefab: gameplay tuning (movingPlatform/spring/boost)",
+          },
           id: { type: "string", description: "remove: prefab/entity instance id" },
           env: {
             type: "object",
@@ -248,14 +288,19 @@ export async function generateLevelOps(prompt: string, data: ContinentData): Pro
     max_tokens: 8192,
     thinking: { type: "adaptive" },
     system:
-      "You edit levels for a cute 3D platformer by emitting patch operations. " +
-      "Coordinate frame: Y up, meters; the terrain is a heightmap over XZ. " +
+      "You edit levels for a 3D platformer (Mario Odyssey / Sonic energy) by emitting patch " +
+      "operations. Coordinate frame: Y up, meters; the terrain is a heightmap over XZ. " +
       `Available prefabs: ${prefabDocs}. Entities: playerSpawn, coin, checkpoint, enemy. ` +
+      "Gameplay prefabs: spring (launches up; props.power), boost (speeds along its facing — " +
+      "aim with rot[1]; props.power), spikes (hazard, respawns), movingPlatform (props: axis " +
+      "x|y|z, dist m, speed m/s), goal (level finish). Skins restyle a prefab's material " +
+      "(brick/planks/stone/checker/metal/grass/candy). " +
       "Rules: for anything that should sit ON the ground, use pos y=null (the editor snaps it " +
       "to the surface). Scale is in meters (a tree is ~4x7x4). Place content INSIDE the level " +
       "bounds. Prefer several concrete ops over vague ones; compose structures from multiple " +
-      "prefabs (e.g. a village = several blocks + gates + fences). For style/mood requests use " +
-      "setEnv/setPalette. Use sculpt for terrain shape changes (hills, pits, flat build sites). " +
+      "prefabs (a village = blocks with planks/brick skins + gates + fences; a platforming " +
+      "course = platforms + springs + moving platforms + coins + a goal). For style/mood use " +
+      "setEnv/setPalette; use sculpt for terrain shapes (hills, pits, flat build sites). " +
       "When the request is ambiguous, do the most useful literal interpretation.",
     messages: [
       {

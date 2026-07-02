@@ -35,13 +35,18 @@ contextual panel, right **Inspector | Level | Style** tabs, status bar
   transform/tint/collider; `F` focus, `Ctrl+D` duplicate, `Del` delete;
   snap with per-step settings.
 - **Place** — searchable, categorized prefab palette (structure / nature /
-  props: platforms, walls, ramps, stairs, gate, dome, bridge, trees, pines,
-  rocks, crystals, fences, rings…), click a surface to drop.
+  props / **gameplay**: platforms, walls, ramps, stairs, gate, dome, bridge,
+  trees, pines, rocks, crystals, fences, rings, **springs, boost pads, spikes,
+  moving platforms, goal flags**), click a surface to drop. The Inspector
+  edits transform, tint, **skin** (brick/planks/stone/checker/metal/grass/
+  candy), collider, and gameplay props (platform path/speed, spring/boost
+  power).
 - **Sculpt** — raise / lower / smooth / flatten with a brush-radius ring
   preview.
 - **Entity** — gameplay markers (spawn, coin, checkpoint, enemy).
 
-**Level tab**: name, gravity, kill-plane, **sea level (ocean plane)**, terrain
+**Level tab**: name, kill-plane, **physics** (gravity + per-level run/jump/air
+multipliers — moon levels, speed stages), **sea level (ocean plane)**, terrain
 **resize/resample**, Ref Image underlay (trace a hand-drawn map).
 **Style tab** — full aesthetic control: presets (Day/Sunset/Night/Alien), sky &
 horizon colors, sun color/intensity/direction, ambient, fog, water color +
@@ -53,13 +58,18 @@ repo (see below).
 
 ### Characters — the designer
 
-Sprite-based characters, fully customizable (see `docs/CHARACTERS.md`):
-body sliders (height/width/weight/head/ears) that reshape the procedural
-pixel sprite *and* the physics capsule, colors + accessory, stat sliders
-(speed/jump/attack/defense) with live-derived movement numbers, and a
-special-move loadout (double jump, dash, glide, ground pound, wall jump).
-Presets: **Joshua** the bear, Scout, Boulder. **Use in Play** sets who you
-spawn as; characters autosave and import/export as JSON.
+A real tab (switch Build ⇄ Characters freely). The character is a **procedural
+3D rig** rendered live on a physical stage: body sliders
+(height/width/weight/head/ears) reshape the model *and* the physics capsule,
+colors + accessory restyle it, stat sliders (speed/jump/attack/defense) show
+live-derived movement numbers, and the special-move loadout gates the verbs
+(double jump, dash, glide, ground pound, wall jump). **🧪 Test Drive** runs the
+real controller on the stage (steps, a dash gap, a wall-jump channel) so you
+feel a character before shipping it. The ✨ Assist box generates characters
+from a description **and/or an attached image** — mapped onto the same rig
+parameters so AI characters move exactly like hand-made ones. Presets:
+**Joshua** the bear, Scout, Boulder; everything autosaves and round-trips as
+JSON. See `docs/CHARACTERS.md`.
 
 ### Play
 
