@@ -575,6 +575,26 @@ export class EditorUI {
       toast(res.ok ? "Published ✓" : "Publish failed", res.ok ? "ok" : "err");
       go.disabled = false;
     }, "primary", m.body);
+
+    sep(m.body);
+    heading("🔒 Remote lock", m.body);
+    hint("A kill switch: commits assets/lock.json to the repo. Every open client polls it about once a minute and shows a lock screen while it's on. Flip it here (uses the token above) or by editing the file on GitHub.", m.body);
+    const lockMsg = el("input", "mb5-in", m.body);
+    lockMsg.placeholder = "optional lock-screen message";
+    const lockStatus = hint("", m.body);
+    const lockRow = row(m.body);
+    const flip = async (locked: boolean, b: HTMLButtonElement) => {
+      b.disabled = true;
+      lockStatus.textContent = locked ? "locking…" : "unlocking…";
+      const { setRemoteLock } = await import("../core/lock");
+      const res = await setRemoteLock(locked, lockMsg.value.trim());
+      lockStatus.textContent = res.detail;
+      (lockStatus as HTMLElement).style.color = res.ok ? "#a6e3a1" : "#f38ba8";
+      toast(res.ok ? (locked ? "App locked 🔒" : "App unlocked 🔓") : "Lock flip failed", res.ok ? "ok" : "err");
+      b.disabled = false;
+    };
+    const lockBtn = btn("🔒 Lock the app", () => void flip(true, lockBtn), "danger", lockRow);
+    const unlockBtn = btn("🔓 Unlock", () => void flip(false, unlockBtn), "", lockRow);
   }
 
   // ------------------------------------------------- tool state

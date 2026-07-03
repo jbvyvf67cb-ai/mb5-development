@@ -15,6 +15,7 @@ import { Editor } from "./editor/editor";
 import { EditorUI } from "./editor/ui";
 import { toast } from "./editor/widgets";
 import { Input } from "./core/input";
+import { LockWatcher } from "./core/lock";
 import { PlayerController } from "./player/controller";
 import { SpriteAvatar } from "./player/avatar";
 import { PlayerEffects } from "./player/effects";
@@ -45,6 +46,8 @@ export class App {
   private desiredCamRadius = 11.5;
   private camera: ArcRotateCamera;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  private lockWatcher: LockWatcher;
+  private remoteLocked = false;
   private historyChanged = () => {
     this.ui.updateHistory();
     this.scheduleSave();
@@ -109,6 +112,10 @@ export class App {
     scene.onBeforeRenderObservable.add(() => this.update());
     addEventListener("keydown", (e) => this.onKeyDown(e));
 
+    // Remote kill switch: assets/lock.json in the repo, polled ~1/min.
+    this.lockWatcher = new LockWatcher((flag) => this.onRemoteLock(flag.locked));
+    this.lockWatcher.start();
+
     const w = window as unknown as Record<string, unknown>;
     w.__app = this;
     w.__world = this.world;
@@ -116,6 +123,7 @@ export class App {
     w.__continent = this.world;
     w.__reframe = () => this.reframe();
     w.__setMode = (m: Mode) => (m === this.mode ? undefined : this.toggleMode());
+    w.__lockWatcher = this.lockWatcher;
 
     this.reframe();
   }
@@ -125,7 +133,24 @@ export class App {
     return ed;
   }
 
+  /** The remote lock flipped: park the app in (frozen) edit mode + overlay. */
+  private onRemoteLock(locked: boolean) {
+    this.remoteLocked = locked;
+    if (locked) {
+      // Leave any live mode; the overlay (drawn by LockWatcher) covers the UI,
+      // and a disabled editor ignores its keyboard shortcuts underneath.
+      if (this.mode === "designtest") this.stopDesignTest();
+      if (this.mode === "design") this.exitDesign();
+      if (this.mode === "play") this.exitPlay();
+      this.editor.disable();
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    } else {
+      this.editor.enable();
+    }
+  }
+
   private onKeyDown(e: KeyboardEvent) {
+    if (this.remoteLocked) return;
     if (this.mode === "design" || this.mode === "designtest") {
       if (e.code === "Escape" && this.mode === "designtest") this.stopDesignTest();
       return;
@@ -462,6 +487,7 @@ export class App {
   }
 
   toggleMode() {
+    if (this.remoteLocked) return;
     if (this.mode === "edit") this.enterPlay();
     else this.exitPlay();
   }

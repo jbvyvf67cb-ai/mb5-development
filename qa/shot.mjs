@@ -24,7 +24,12 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 
 const errors = [];
 page.on("console", (m) => {
-  if (m.type() === "error") errors.push(`console.error: ${m.text()}`);
+  if (m.type() !== "error") return;
+  // The remote-lock poller probes api.github.com; sandboxes with TLS-
+  // intercepting proxies (or no network) log a resource error for it. The
+  // app falls back to ./lock.json by design — not a defect worth failing on.
+  if (m.text().includes("net::ERR_") && (m.location()?.url ?? "").includes("api.github.com")) return;
+  errors.push(`console.error: ${m.text()}`);
 });
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 

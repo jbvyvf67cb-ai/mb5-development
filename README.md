@@ -161,6 +161,27 @@ then get it into the repo one of two ways:
   branch and Pages redeploys. Convenient, but it holds a write token in the
   browser, so use only on a trusted personal machine (**Clear Token** wipes it).
 
+## Remote lock (kill switch)
+
+`assets/lock.json` is a one-flag file — `{ "locked": true/false, "message": "…" }`.
+Every open client polls it about **once a minute** (plus on tab refocus) and
+drops a fullscreen lock screen while it's on; flipping it back unlocks them
+automatically on a later poll. The flag is read live through the GitHub
+Contents API (a flip lands within ~1 minute — no waiting for a Pages
+redeploy), with the Pages-served copy as fallback; network errors keep the
+last known state, so an outage never bricks — or unlocks — the app.
+
+Two ways to flip it:
+
+- **In the editor**: **Publish (GitHub)** panel → **🔒 Remote lock** →
+  Lock / Unlock (+ optional lock-screen message). Uses the same saved PAT as
+  publishing.
+- **From anywhere**: edit `assets/lock.json` on github.com or the GitHub
+  mobile app and change `"locked"` — a one-character commit.
+
+This is a *soft* lock (client-side, for a static site) — it politely stops
+players, it is not a security boundary.
+
 ## Levels & hand-drawn import
 
 The level format and the **hand-drawn map → JSON** conversion flow are
