@@ -340,14 +340,24 @@ export async function generateLevelOps(prompt: string, data: ContinentData): Pro
  * Read a drawn map and produce a MapPlan (the compiler rasterizes it into
  * ContinentData). The whole contract: interpret the drawing decisively and
  * completely — this call must never come back asking questions.
+ *
+ * STREAMED, not create(): with max_tokens this large the SDK refuses
+ * non-streaming requests ("streaming is required for operations that may take
+ * longer than 10 minutes") because a detailed plan can outlive the HTTP
+ * timeout. Streaming keeps the connection alive for as long as the plan takes
+ * and lets the modal show live progress.
  */
-export async function generateMapPlan(image: PromptImage, notes: string): Promise<MapPlan> {
+export async function generateMapPlan(
+  image: PromptImage,
+  notes: string,
+  onProgress?: (chars: number) => void,
+): Promise<MapPlan> {
   const { MAP_PLAN_SCHEMA } = await import("./mapplan");
   const gameplayPrefabs =
     "spring (launch pad), boost (speed pad), spikes (hazard), movingPlatform, goal (level finish), " +
     "ring (collect arch), crystal (glowing), ball/crate (physical props), lava (hazard liquid slab — " +
     "use for drawn lava/volcano pools, scaled to fit), pool (calm water slab — ponds/lakes at altitude)";
-  const response = await client().messages.create({
+  const stream = client().messages.stream({
     model: MODEL,
     max_tokens: 24000,
     thinking: { type: "adaptive" },
@@ -406,6 +416,14 @@ export async function generateMapPlan(image: PromptImage, notes: string): Promis
     ],
     output_config: { format: { type: "json_schema", schema: MAP_PLAN_SCHEMA } },
   });
+  if (onProgress) {
+    let chars = 0;
+    stream.on("text", (t) => {
+      chars += t.length;
+      onProgress(chars);
+    });
+  }
+  const response = await stream.finalMessage();
   return readJson(response) as unknown as MapPlan;
 }
 

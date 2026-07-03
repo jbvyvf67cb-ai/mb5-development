@@ -636,10 +636,12 @@ export class EditorUI {
       busy = true;
       go.disabled = true;
       (status as HTMLElement).style.color = "";
-      status.textContent = "reading the drawing… (a detailed map can take a minute)";
+      status.textContent = "reading the drawing… (a detailed map can take a few minutes)";
       try {
         const { generateMapPlan } = await import("../ai/assist");
-        const plan = await generateMapPlan(image, ta.value);
+        const plan = await generateMapPlan(image, ta.value, (chars) => {
+          status.textContent = `drafting the plan… ${(chars / 1024).toFixed(1)} KB of map so far`;
+        });
         status.textContent = "rasterizing terrain + placing everything…";
         const { compileMapPlan } = await import("../ai/mapplan");
         const { data, log: lines } = compileMapPlan(plan);
