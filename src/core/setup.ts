@@ -60,6 +60,26 @@ export async function bootEngine(canvas: HTMLCanvasElement): Promise<BootResult>
   // Right-drag (or ctrl+drag) pans; default sensibility is far too slow for a
   // world-scale editor.
   camera.panningSensibility = 40;
+  // Pinch to zoom (touch): scale radius by the finger-distance ratio — the
+  // world tracks the fingers 1:1, which also maps perfectly onto the ortho
+  // top view. Two-finger drag pans (multiTouchPanAndZoom is Babylon's default).
+  camera.useNaturalPinchZoom = true;
+  camera.pinchDeltaPercentage = 0.01; // fallback feel if natural zoom is off
+  // Trackpad pinch arrives as ctrl+wheel: the camera must zoom (Babylon's
+  // wheel input already handles it) and the PAGE must not — attachControl
+  // runs with noPreventDefault, so stop the browser zoom here, canvas-only.
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      if (e.ctrlKey) e.preventDefault();
+    },
+    { passive: false },
+  );
+  // Older iOS Safari can still page-zoom through proprietary gesture events
+  // even with touch-action:none — the canvas owns those gestures.
+  for (const ev of ["gesturestart", "gesturechange"]) {
+    canvas.addEventListener(ev, ((e: Event) => e.preventDefault()) as EventListener);
+  }
 
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
   hemi.intensity = 0.55;
