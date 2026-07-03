@@ -17,6 +17,7 @@ import {
   DirectionalLight,
   HavokPlugin,
 } from "@babylonjs/core";
+import type { ArcRotateCameraPointersInput } from "@babylonjs/core";
 import HavokPhysics from "@babylonjs/havok";
 
 export interface BootResult {
@@ -60,11 +61,28 @@ export async function bootEngine(canvas: HTMLCanvasElement): Promise<BootResult>
   // Right-drag (or ctrl+drag) pans; default sensibility is far too slow for a
   // world-scale editor.
   camera.panningSensibility = 40;
-  // Pinch to zoom (touch): scale radius by the finger-distance ratio — the
-  // world tracks the fingers 1:1, which also maps perfectly onto the ortho
-  // top view. Two-finger drag pans (multiTouchPanAndZoom is Babylon's default).
-  camera.useNaturalPinchZoom = true;
-  camera.pinchDeltaPercentage = 0.01; // fallback feel if natural zoom is off
+  // Pinch to zoom (touch): AMPLIFIED natural zoom. Babylon's stock options
+  // both fail at world scale — natural (finger-ratio) zoom is exact but
+  // weak (radius spans 6..500; a full pinch is ~3x, so crossing the range
+  // takes six of them), and the percentage mode keys off squared pixel
+  // distances, slamming the whole range in one gesture at ANY setting. So:
+  // finger ratio raised to a power — one confident pinch ≈ 10x zoom, tiny
+  // pinches stay precise, and it's radius-relative at every scale. The
+  // built-in zoom term is neutralized (huge pinchPrecision) but the original
+  // handler still runs for Babylon's two-finger panning.
+  const PINCH_GAIN = 2.2;
+  const pointers = camera.inputs.attached.pointers as ArcRotateCameraPointersInput;
+  pointers.pinchPrecision = 1e9;
+  const origMultiTouch = pointers.onMultiTouch.bind(pointers);
+  pointers.onMultiTouch = (pointA, pointB, prevSq, sq, prevPoint, point) => {
+    origMultiTouch(pointA, pointB, prevSq, sq, prevPoint, point);
+    if (prevSq > 0 && sq > 0) {
+      const ratio = Math.sqrt(prevSq / sq); // >1 = fingers closing = zoom out
+      const next = camera.radius * Math.pow(ratio, PINCH_GAIN);
+      camera.radius = Math.min(camera.upperRadiusLimit ?? Infinity, Math.max(camera.lowerRadiusLimit ?? 0.1, next));
+      camera.inertialRadiusOffset = 0; // pinch is direct-drive, no coasting
+    }
+  };
   // Trackpad pinch arrives as ctrl+wheel: the camera must zoom (Babylon's
   // wheel input already handles it) and the PAGE must not — attachControl
   // runs with noPreventDefault, so stop the browser zoom here, canvas-only.
