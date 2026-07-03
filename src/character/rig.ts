@@ -1,11 +1,15 @@
-// CharacterRig — the character as a real 3D body (blocky, Crossy-Road-style).
+// CharacterRig — the character as a real 3D body with a real (procedural)
+// skeleton: two-segment arms (shoulder + ELBOW) and legs (hip + KNEE), a spin
+// node for flips, and squash & stretch. Built from CharacterData in either
+// style (blocky boxes / rounded spheres+capsules); every animation is code-
+// driven and parametric, so sliders, presets, and AI-generated characters all
+// move identically.
 //
-// Built procedurally from CharacterData: the same body morphs, colors, and
-// accessory that the designer sliders edit produce actual meshes with jointed
-// limbs, and every animation is code-driven (no skeletal assets). That keeps
-// the whole pipeline parametric: sliders, presets, and AI-generated characters
-// (including image→character) all land on the same rig and move identically —
-// which is what keeps gameplay smooth.
+// Node graph:
+//   root (yaw, at the feet)
+//    └ spin (flip rotation + squash/stretch, at the center of mass)
+//       ├ torso (pitch) → body/head/face/accessory + shoulders→elbows
+//       └ hipL/hipR → thigh → knee → shin + foot
 
 import { Color3, Mesh, MeshBuilder, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
 import type { Scene } from "@babylonjs/core";
@@ -14,31 +18,45 @@ import type { Vec3 } from "../world/schema";
 
 export type RigPose = "idle" | "run" | "jump" | "fall" | "dash" | "pound" | "glide";
 
+export interface RigFx {
+  /** Front-flip progress 0..1 (somersault / pound windup). */
+  flip?: number;
+  /** Vertical squash/stretch factor (1 = neutral). */
+  stretch?: number;
+}
+
 const shade = (c: Vec3, f: number): Color3 => new Color3(c[0] * f, c[1] * f, c[2] * f);
+const ease = (t: number) => t * t * (3 - 2 * t);
 
 interface Joint {
   node: TransformNode;
-  targetX: number; // desired local rotation.x
-  targetZ: number;
+  tx: number; // target rotation.x
+  tz: number; // target rotation.z
 }
 
 export class CharacterRig {
-  /** Yaw this node to face travel direction; position = feet. */
   root: TransformNode;
-  /** Total height (feet → top of head), for camera/scaling decisions. */
+  /** Feet → top of head (after any targetHeight scaling). */
   height: number;
 
   private scene: Scene;
   private mats: StandardMaterial[] = [];
-  private armL!: Joint;
-  private armR!: Joint;
-  private legL!: Joint;
-  private legR!: Joint;
-  private torso!: TransformNode; // pitch/bob node (body + head + arms)
+  private spin: TransformNode;
+  private torso: TransformNode;
+  private shoulderL!: Joint;
+  private shoulderR!: Joint;
+  private elbowL!: Joint;
+  private elbowR!: Joint;
+  private hipL!: Joint;
+  private hipR!: Joint;
+  private kneeL!: Joint;
+  private kneeR!: Joint;
   private baseTorsoY: number;
+  private spinY: number;
+  private spinCur = 0;
   private clock = 0;
 
-  constructor(scene: Scene, ch: CharacterData, name = "rig") {
+  constructor(scene: Scene, ch: CharacterData, name = "rig", opts: { targetHeight?: number } = {}) {
     this.scene = scene;
     this.root = new TransformNode(`${name}:root`, scene);
 
@@ -47,6 +65,7 @@ export class CharacterRig {
     const W = b.width;
     const wt = b.weight;
     const c = ch.colors;
+    const style = ch.style ?? "blocky";
 
     const fur = this.mat(shade(c.fur, 1));
     const furDark = this.mat(shade(c.fur, 0.75));
@@ -55,20 +74,34 @@ export class CharacterRig {
     const accent = this.mat(shade(c.accent, 1));
     const ink = this.mat(new Color3(0.09, 0.07, 0.06));
 
-    // proportions (meters) — chunky mascot ratios
-    const legH = 0.3 * H;
-    const legT = 0.15 * W * (1 + 0.5 * wt);
-    const bodyH = 0.56 * H;
-    const bodyW = 0.52 * W * (1 + 0.45 * wt);
-    const bodyD = 0.34 * W * (1 + 0.35 * wt);
-    const headS = 0.48 * b.head;
-    const armL_ = 0.4 * H;
-    const armT = 0.12 * W * (1 + 0.45 * wt);
+    // proportions (meters) — legs long enough to READ when they swing
+    const thighLen = 0.22 * H;
+    const shinLen = 0.2 * H;
+    const legH = thighLen + shinLen;
+    const legT = 0.14 * W * (1 + 0.45 * wt);
+    const bodyH = 0.5 * H;
+    const bodyW = 0.5 * W * (1 + 0.42 * wt);
+    const bodyD = 0.32 * W * (1 + 0.32 * wt);
+    const headS = 0.46 * b.head;
+    const upperArm = 0.22 * H;
+    const foreArm = 0.18 * H;
+    const armT = 0.11 * W * (1 + 0.4 * wt);
     const earS = 0.15 * b.ears;
 
-    this.height = legH + bodyH + headS * 1.05;
+    const natural = legH + bodyH + headS;
+    this.height = natural;
 
-    const style = ch.style ?? "blocky";
+    // spin pivot at the center of mass
+    this.spinY = legH + bodyH * 0.42;
+    this.spin = new TransformNode(`${name}:spin`, scene);
+    this.spin.parent = this.root;
+    this.spin.position.y = this.spinY;
+
+    this.torso = new TransformNode(`${name}:torsoN`, scene);
+    this.torso.parent = this.spin;
+    this.baseTorsoY = legH - this.spinY;
+    this.torso.position.y = this.baseTorsoY;
+
     const box = (nm: string, w: number, h: number, d: number, m: StandardMaterial, parent: TransformNode) => {
       const mesh = MeshBuilder.CreateBox(`${name}:${nm}`, { width: w, height: h, depth: d }, scene);
       mesh.material = m;
@@ -84,34 +117,40 @@ export class CharacterRig {
       mesh.isPickable = false;
       return mesh;
     };
-    // style-aware body part: chunky box or organic ellipsoid
     const part = style === "rounded" ? ball : box;
-    const joint = (nm: string, x: number, y: number, z: number): Joint => {
+    const segment = (nm: string, len: number, t: number, m: StandardMaterial, parent: TransformNode): Mesh => {
+      let mesh: Mesh;
+      if (style === "rounded") {
+        mesh = MeshBuilder.CreateCapsule(`${name}:${nm}`, { radius: t / 2, height: len + t * 0.6 }, scene);
+        mesh.material = m;
+        mesh.parent = parent;
+        mesh.isPickable = false;
+      } else {
+        mesh = box(nm, t, len, t, m, parent);
+      }
+      mesh.position.y = -len / 2;
+      return mesh;
+    };
+    const jointAt = (nm: string, parent: TransformNode, x: number, y: number, z: number): Joint => {
       const node = new TransformNode(`${name}:${nm}`, scene);
-      node.parent = this.torso;
+      node.parent = parent;
       node.position.set(x, y, z);
-      return { node, targetX: 0, targetZ: 0 };
+      return { node, tx: 0, tz: 0 };
     };
 
-    // torso group (bobs/pitches as one)
-    this.torso = new TransformNode(`${name}:torso`, scene);
-    this.torso.parent = this.root;
-    this.baseTorsoY = legH;
-    this.torso.position.y = legH;
-
-    // body + belly patch
-    const body = part("body", bodyW * (style === "rounded" ? 1.12 : 1), bodyH * (style === "rounded" ? 1.06 : 1), bodyD * (style === "rounded" ? 1.15 : 1), fur, this.torso);
+    // --- body + belly ---
+    const body = part("body", bodyW * (style === "rounded" ? 1.12 : 1), bodyH * (style === "rounded" ? 1.08 : 1), bodyD * (style === "rounded" ? 1.18 : 1), fur, this.torso);
     body.position.y = bodyH / 2;
     const bellyPlate = part("belly", bodyW * 0.62, bodyH * 0.6, style === "rounded" ? 0.12 : 0.02, belly, this.torso);
-    bellyPlate.position.set(0, bodyH * 0.42, bodyD / 2 + (style === "rounded" ? 0.04 : 0.005));
+    bellyPlate.position.set(0, bodyH * 0.42, bodyD / 2 + (style === "rounded" ? 0.045 : 0.005));
 
-    // head (+Z = forward/face)
+    // --- head + face (+Z forward) ---
     const head = part("head", headS * 1.15, headS * (style === "rounded" ? 1.08 : 1), headS * (style === "rounded" ? 1.05 : 0.95), fur, this.torso);
     head.position.y = bodyH + headS / 2 - 0.02;
     const headTopY = bodyH + headS;
     const faceZ = (headS * (style === "rounded" ? 1.05 : 0.95)) / 2;
-    const muzzleBox = part("muzzle", headS * 0.5, headS * 0.34, style === "rounded" ? 0.16 : 0.08, muzzle, this.torso);
-    muzzleBox.position.set(0, bodyH + headS * 0.3, faceZ + 0.02);
+    const muzzleP = part("muzzle", headS * 0.5, headS * 0.34, style === "rounded" ? 0.16 : 0.08, muzzle, this.torso);
+    muzzleP.position.set(0, bodyH + headS * 0.3, faceZ + 0.02);
     const nose = part("nose", 0.05, 0.04, 0.04, ink, this.torso);
     nose.position.set(0, bodyH + headS * 0.4, faceZ + (style === "rounded" ? 0.1 : 0.085));
     for (const side of [-1, 1] as const) {
@@ -124,41 +163,33 @@ export class CharacterRig {
       earIn.position.z += style === "rounded" ? 0.02 : 0.005;
     }
 
-    // limbs (joint nodes at shoulder/hip; mesh hangs below)
-    const limbMesh = (j: Joint, len: number, t: number, m: StandardMaterial, nm: string) => {
-      let mesh: Mesh;
-      if (style === "rounded") {
-        mesh = MeshBuilder.CreateCapsule(`${name}:${nm}`, { radius: t / 2, height: len + t }, scene);
-        mesh.material = m;
-        mesh.parent = j.node;
-        mesh.isPickable = false;
-      } else {
-        mesh = box(nm, t, len, t, m, j.node);
-      }
-      mesh.position.y = -len / 2;
-      return mesh;
+    // --- arms: shoulder → upper arm → ELBOW → forearm + paw ---
+    const mkArm = (side: -1 | 1): [Joint, Joint] => {
+      const shoulder = jointAt(`shoulder${side}`, this.torso, side * (bodyW / 2 + armT / 2 + 0.01), bodyH * 0.86, 0);
+      segment(`upperArm${side}`, upperArm, armT, fur, shoulder.node);
+      const elbow = jointAt(`elbow${side}`, shoulder.node, 0, -upperArm, 0);
+      segment(`foreArm${side}`, foreArm, armT * 0.92, fur, elbow.node);
+      const paw = part(`paw${side}`, armT * 1.15, armT * 0.9, armT * 1.15, muzzle, elbow.node);
+      paw.position.y = -foreArm;
+      return [shoulder, elbow];
     };
-    this.armL = joint("armL", -(bodyW / 2 + armT / 2 + 0.01), bodyH * 0.88, 0);
-    this.armR = joint("armR", bodyW / 2 + armT / 2 + 0.01, bodyH * 0.88, 0);
-    limbMesh(this.armL, armL_, armT, fur, "armLm");
-    limbMesh(this.armR, armL_, armT, fur, "armRm");
+    [this.shoulderL, this.elbowL] = mkArm(-1);
+    [this.shoulderR, this.elbowR] = mkArm(1);
 
-    // legs parent to root (they carry the body)
-    const hipY = legH;
-    const mkLeg = (nm: string, sx: number): Joint => {
-      const node = new TransformNode(`${name}:${nm}`, scene);
-      node.parent = this.root;
-      node.position.set(sx, hipY, 0);
-      const j: Joint = { node, targetX: 0, targetZ: 0 };
-      limbMesh(j, legH, legT, furDark, `${nm}m`);
-      const foot = part(`${nm}f`, legT * 1.15, legT * 0.5, legT * 1.6, muzzle, node);
-      foot.position.set(0, -legH + legT * 0.25, legT * 0.25);
-      return j;
+    // --- legs: hip → thigh → KNEE → shin + foot ---
+    const mkLeg = (side: -1 | 1): [Joint, Joint] => {
+      const hip = jointAt(`hip${side}`, this.spin, side * bodyW * 0.26, legH - this.spinY, 0);
+      segment(`thigh${side}`, thighLen, legT, furDark, hip.node);
+      const knee = jointAt(`knee${side}`, hip.node, 0, -thighLen, 0);
+      segment(`shin${side}`, shinLen, legT * 0.9, furDark, knee.node);
+      const foot = part(`foot${side}`, legT * 1.15, legT * 0.5, legT * 1.7, muzzle, knee.node);
+      foot.position.set(0, -shinLen + legT * 0.2, legT * 0.3);
+      return [hip, knee];
     };
-    this.legL = mkLeg("legL", -bodyW * 0.28);
-    this.legR = mkLeg("legR", bodyW * 0.28);
+    [this.hipL, this.kneeL] = mkLeg(-1);
+    [this.hipR, this.kneeR] = mkLeg(1);
 
-    // --- accessory wardrobe (shared across styles) ---
+    // --- accessory wardrobe ---
     const acc = ch.accessory;
     if (acc === "bowtie") {
       const knot = box("bowKnot", 0.06, 0.06, 0.04, this.mat(shade(c.accent, 0.8)), this.torso);
@@ -239,6 +270,13 @@ export class CharacterRig {
         wing.rotation.y = -side * 0.3;
       }
     }
+
+    // scale to match the gameplay collider so the visual body IS the hitbox
+    if (opts.targetHeight && natural > 0.01) {
+      const k = opts.targetHeight / natural;
+      this.root.scaling.setAll(k);
+      this.height = opts.targetHeight;
+    }
   }
 
   private mat(color: Color3): StandardMaterial {
@@ -249,78 +287,131 @@ export class CharacterRig {
     return m;
   }
 
-  /** Drive the pose each frame. runPhase cycles 0..1 with travel. */
-  update(pose: RigPose, runPhase: number, dt: number) {
+  /** Drive the pose each frame. runPhase cycles 0..1 with actual travel. */
+  update(pose: RigPose, runPhase: number, dt: number, fx: RigFx = {}) {
     this.clock += dt;
-    const swing = Math.sin(runPhase * Math.PI * 2) * 1.0;
+    const phi = runPhase * Math.PI * 2;
+    const sL = Math.sin(phi);
+    const sR = Math.sin(phi + Math.PI);
     let torsoPitch = 0;
     let torsoBob = 0;
 
+    const set = (j: Joint, tx: number, tz: number) => {
+      j.tx = tx;
+      j.tz = tz;
+    };
+
     switch (pose) {
-      case "run":
-        this.legL.targetX = swing;
-        this.legR.targetX = -swing;
-        this.armL.targetX = -swing * 0.85;
-        this.armR.targetX = swing * 0.85;
-        this.armL.targetZ = 0.08;
-        this.armR.targetZ = -0.08;
-        torsoPitch = 0.14;
-        torsoBob = Math.abs(Math.sin(runPhase * Math.PI * 2)) * 0.035;
+      case "run": {
+        // stride: hips swing, knees flex on the recovery swing, arms pump
+        const kneeL = 0.28 + Math.max(0, Math.sin(phi - 2.1)) * 1.15;
+        const kneeR = 0.28 + Math.max(0, Math.sin(phi + Math.PI - 2.1)) * 1.15;
+        set(this.hipL, sL * 0.85, 0);
+        set(this.hipR, sR * 0.85, 0);
+        set(this.kneeL, kneeL, 0);
+        set(this.kneeR, kneeR, 0);
+        set(this.shoulderL, sR * 0.7, 0.1);
+        set(this.shoulderR, sL * 0.7, -0.1);
+        set(this.elbowL, -0.75, 0);
+        set(this.elbowR, -0.75, 0);
+        torsoPitch = 0.16;
+        torsoBob = Math.abs(Math.sin(phi)) * 0.03;
         break;
+      }
       case "idle": {
-        const breathe = Math.sin(this.clock * 2.2) * 0.03;
-        this.legL.targetX = this.legR.targetX = 0;
-        this.armL.targetX = this.armR.targetX = 0;
-        this.armL.targetZ = 0.12 + breathe;
-        this.armR.targetZ = -0.12 - breathe;
+        const breathe = Math.sin(this.clock * 2.2) * 0.02;
+        set(this.hipL, 0, 0);
+        set(this.hipR, 0, 0);
+        set(this.kneeL, 0.06, 0);
+        set(this.kneeR, 0.06, 0);
+        set(this.shoulderL, 0, 0.1 + breathe);
+        set(this.shoulderR, 0, -0.1 - breathe);
+        set(this.elbowL, -0.3, 0);
+        set(this.elbowR, -0.3, 0);
         break;
       }
       case "jump":
-        this.legL.targetX = 0.85;
-        this.legR.targetX = 0.6;
-        this.armL.targetX = this.armR.targetX = -2.6; // arms up
-        this.armL.targetZ = 0.35;
-        this.armR.targetZ = -0.35;
+        set(this.hipL, -0.7, 0); // thighs up
+        set(this.hipR, -0.45, 0);
+        set(this.kneeL, 1.5, 0); // full tuck
+        set(this.kneeR, 1.3, 0);
+        set(this.shoulderL, -2.5, 0.35);
+        set(this.shoulderR, -2.5, -0.35);
+        set(this.elbowL, -0.5, 0);
+        set(this.elbowR, -0.5, 0);
         break;
       case "fall":
-        this.legL.targetX = 0.35;
-        this.legR.targetX = -0.2;
-        this.armL.targetX = this.armR.targetX = -2.2;
-        this.armL.targetZ = 0.8;
-        this.armR.targetZ = -0.8;
+        set(this.hipL, -0.3, 0.12);
+        set(this.hipR, 0.05, -0.12);
+        set(this.kneeL, 0.7, 0);
+        set(this.kneeR, 0.4, 0);
+        set(this.shoulderL, -2.1, 0.8);
+        set(this.shoulderR, -2.1, -0.8);
+        set(this.elbowL, -0.25, 0);
+        set(this.elbowR, -0.25, 0);
         break;
       case "dash":
-        this.legL.targetX = 0.9;
-        this.legR.targetX = -0.9;
-        this.armL.targetX = this.armR.targetX = 1.1; // trailing
-        this.armL.targetZ = 0.25;
-        this.armR.targetZ = -0.25;
-        torsoPitch = 0.5;
+        set(this.hipL, -0.9, 0); // stride frozen mid-leap
+        set(this.hipR, 0.9, 0);
+        set(this.kneeL, 0.9, 0);
+        set(this.kneeR, 0.35, 0);
+        set(this.shoulderL, 1.15, 0.2); // trailing behind
+        set(this.shoulderR, 1.15, -0.2);
+        set(this.elbowL, -0.5, 0);
+        set(this.elbowR, -0.5, 0);
+        torsoPitch = 0.55;
         break;
       case "pound":
-        this.legL.targetX = 0.9;
-        this.legR.targetX = 0.9;
-        this.armL.targetX = this.armR.targetX = 0;
-        this.armL.targetZ = 1.5; // straight out
-        this.armR.targetZ = -1.5;
-        torsoPitch = -0.12;
+        set(this.hipL, -0.5, 0.4); // star
+        set(this.hipR, -0.5, -0.4);
+        set(this.kneeL, 1.4, 0);
+        set(this.kneeR, 1.4, 0);
+        set(this.shoulderL, 0, 1.5);
+        set(this.shoulderR, 0, -1.5);
+        set(this.elbowL, -0.2, 0);
+        set(this.elbowR, -0.2, 0);
+        torsoPitch = -0.1;
         break;
       case "glide":
-        this.legL.targetX = this.legR.targetX = 0.15;
-        this.armL.targetX = this.armR.targetX = 0;
-        this.armL.targetZ = 1.57;
-        this.armR.targetZ = -1.57;
-        torsoPitch = 0.35 + Math.sin(this.clock * 3) * 0.05;
+        set(this.hipL, 0.15, 0.06); // legs trail slightly back
+        set(this.hipR, 0.15, -0.06);
+        set(this.kneeL, 0.25, 0);
+        set(this.kneeR, 0.25, 0);
+        set(this.shoulderL, 0, 1.57); // wings out
+        set(this.shoulderR, 0, -1.57);
+        set(this.elbowL, -0.12, 0);
+        set(this.elbowR, -0.12, 0);
+        torsoPitch = 0.32 + Math.sin(this.clock * 3) * 0.05;
         break;
     }
 
-    const k = Math.min(1, dt * 14);
-    for (const j of [this.armL, this.armR, this.legL, this.legR]) {
-      j.node.rotation.x += (j.targetX - j.node.rotation.x) * k;
-      j.node.rotation.z += (j.targetZ - j.node.rotation.z) * k;
+    const k = Math.min(1, dt * 16);
+    for (const j of [this.shoulderL, this.shoulderR, this.elbowL, this.elbowR, this.hipL, this.hipR, this.kneeL, this.kneeR]) {
+      j.node.rotation.x += (j.tx - j.node.rotation.x) * k;
+      j.node.rotation.z += (j.tz - j.node.rotation.z) * k;
     }
     this.torso.rotation.x += (torsoPitch - this.torso.rotation.x) * k;
     this.torso.position.y = this.baseTorsoY + torsoBob;
+
+    // flip (somersault / pound windup) around the center of mass.
+    // FRONT flip = positive X (top of the head travels forward). When a flip
+    // is interrupted, finish the turn smoothly instead of snapping upright.
+    const flip = fx.flip ?? 0;
+    if (flip > 0) {
+      this.spinCur = ease(flip) * Math.PI * 2;
+    } else {
+      const target = this.spinCur > Math.PI ? Math.PI * 2 : 0;
+      this.spinCur += (target - this.spinCur) * Math.min(1, dt * 14);
+      if (Math.abs(target - this.spinCur) < 0.02) this.spinCur = 0;
+    }
+    this.spin.rotation.x = this.spinCur;
+
+    // squash & stretch (volume-ish preserving); shift the pivot down so the
+    // FEET stay planted while the body compresses
+    const s = fx.stretch ?? 1;
+    const xz = 1 / Math.sqrt(Math.max(0.5, s));
+    this.spin.scaling.set(xz, s, xz);
+    this.spin.position.y = this.spinY * s;
   }
 
   setYaw(yaw: number) {
@@ -332,7 +423,7 @@ export class CharacterRig {
   }
 
   dispose() {
-    this.root.dispose(false, true); // dispose children meshes too
+    this.root.dispose(false, true);
     for (const m of this.mats) m.dispose();
   }
 }

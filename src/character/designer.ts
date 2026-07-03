@@ -190,7 +190,9 @@ export class DesignerMode {
 
   private rebuildRig() {
     this.rig?.dispose();
-    this.rig = new CharacterRig(this.host.scene, this.current, "preview");
+    this.rig = new CharacterRig(this.host.scene, this.current, "preview", {
+      targetHeight: deriveMovement(this.current).capsuleHeight, // same size as in play
+    });
     this.rig.root.position.y = STAGE_Y;
   }
 

@@ -74,6 +74,7 @@ export class World implements ContinentResult {
 
   private aggregates = new Map<string, PhysicsAggregate>();
   private matCache = new Map<string, StandardMaterial>();
+  private entityMats: StandardMaterial[] = [];
   private terrainMat?: StandardMaterial;
   private waterMat?: StandardMaterial;
 
@@ -137,7 +138,8 @@ export class World implements ContinentResult {
     }
     if (this.waterMat) {
       this.waterMat.diffuseColor = new Color3(e.waterColor[0], e.waterColor[1], e.waterColor[2]);
-      this.waterMat.emissiveColor = new Color3(e.waterColor[0] * 0.35, e.waterColor[1] * 0.35, e.waterColor[2] * 0.35);
+      // low emissive = shimmer without triggering visible bloom in the glow layer
+      this.waterMat.emissiveColor = new Color3(e.waterColor[0] * 0.18, e.waterColor[1] * 0.18, e.waterColor[2] * 0.18);
       this.waterMat.alpha = e.waterOpacity;
     }
   }
@@ -174,6 +176,8 @@ export class World implements ContinentResult {
       const mat = new StandardMaterial("mat:water", this.scene);
       mat.specularColor = new Color3(0.4, 0.5, 0.6);
       mat.backFaceCulling = false;
+      // keep water out of the glow layer's reach (emissive is set in applyEnv,
+      // scaled low there for a shimmer rather than a bloom)
       this.waterMat = mat;
     }
     mesh.material = this.waterMat;
@@ -425,16 +429,24 @@ export class World implements ContinentResult {
   // --- entities ---
 
   private realizeEntity(ent: EntityInstance): Mesh {
-    const marker = MeshBuilder.CreateSphere(
-      `entity:${ent.id}`,
-      { diameter: 0.9, segments: 8 },
-      this.scene,
-    );
+    // Coins get real coin geometry (they spin during play); other markers are orbs.
+    const marker =
+      ent.type === "coin"
+        ? MeshBuilder.CreateCylinder(
+            `entity:${ent.id}`,
+            { diameter: 1.0, height: 0.14, tessellation: 18 },
+            this.scene,
+          )
+        : MeshBuilder.CreateSphere(`entity:${ent.id}`, { diameter: 0.9, segments: 8 }, this.scene);
     marker.parent = this.root;
     marker.position.set(ent.pos[0], ent.pos[1], ent.pos[2]);
+    if (ent.type === "coin") marker.rotation.z = Math.PI / 2; // standing coin
     const mat = new StandardMaterial(`entmat:${ent.id}`, this.scene);
+    this.entityMats.push(mat);
     const c = ENTITY_COLORS[ent.type] ?? new Color3(0.9, 0.9, 0.9);
-    mat.emissiveColor = c;
+    // Only coins really glow; other markers are editor aids and stay matte
+    // (full emissive + the glow layer turned them into lanterns).
+    mat.emissiveColor = ent.type === "coin" ? c.scale(0.75) : c.scale(0.3);
     mat.diffuseColor = c;
     marker.material = mat;
     marker.metadata = { entityId: ent.id, type: ent.type };
@@ -487,6 +499,8 @@ export class World implements ContinentResult {
     this.aggregates.clear();
     this.root.dispose();
     this.matCache.forEach((m) => m.dispose());
+    for (const m of this.entityMats) m.dispose();
+    this.entityMats.length = 0;
     this.terrainMat?.dispose();
     this.waterMat?.dispose();
   }

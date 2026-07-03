@@ -12,6 +12,7 @@ import {
   Vector3,
   Color4,
   ArcRotateCamera,
+  GlowLayer,
   HemisphericLight,
   DirectionalLight,
   HavokPlugin,
@@ -64,6 +65,10 @@ export async function bootEngine(canvas: HTMLCanvasElement): Promise<BootResult>
   hemi.intensity = 0.55;
   const sun = new DirectionalLight("sun", new Vector3(-0.5, -1, -0.3), scene);
   sun.intensity = 1.4;
+
+  // Emissive things (coins, crystals, rings, halos, boost pads) actually glow.
+  const glow = new GlowLayer("glow", scene);
+  glow.intensity = 0.55;
 
   return { engine, scene };
 }

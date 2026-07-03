@@ -17,6 +17,7 @@ import { toast } from "./editor/widgets";
 import { Input } from "./core/input";
 import { PlayerController } from "./player/controller";
 import { SpriteAvatar } from "./player/avatar";
+import { PlayerEffects } from "./player/effects";
 import { activeCharacter } from "./character/store";
 import { Hud } from "./ui/hud";
 import { PlaySession } from "./game/play";
@@ -35,6 +36,7 @@ export class App {
   private input = new Input();
   private player?: PlayerController;
   private avatar?: SpriteAvatar;
+  private effects?: PlayerEffects;
   private session?: PlaySession;
   private designer?: import("./character/designer").DesignerMode;
   private savedCam?: { alpha: number; beta: number; radius: number; target: Vector3 };
@@ -179,11 +181,15 @@ export class App {
       let d = desired - this.camera.alpha;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      this.camera.alpha += d * Math.min(1, dt * 3);
-      this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, 1, 0);
+      this.camera.alpha += d * Math.min(1, dt * 3.4);
+      this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, 1.4, 0);
       this.collideCamera(dt);
+      // speed FOV kick (dash/boost rush)
+      const fovWant = 0.8 + Math.min(0.18, Math.max(0, this.player.hSpeed - 9) / 55);
+      this.camera.fov += (fovWant - this.camera.fov) * Math.min(1, dt * 5);
 
       this.avatar?.update(dt, this.camera);
+      this.effects?.update(dt);
       if (this.mode === "designtest") {
         if (this.player.position.y < this.designKillY) this.player.teleport(this.designSpawn);
       } else {
@@ -359,12 +365,14 @@ export class App {
     this.designKillY = killY;
     this.player = new PlayerController(this.scene, spawn, ch);
     this.avatar = new SpriteAvatar(this.scene, this.player, ch);
+    this.effects = new PlayerEffects(this.scene, this.player);
+    this.player.onPoundLand = (pos) => this.effects?.burstAt(pos, 46);
     this.input.attach();
     this.hud.setCharacter(ch);
     this.hud.show();
-    this.desiredCamRadius = 10.5;
-    this.camera.radius = 10.5;
-    this.camera.beta = 1.05;
+    this.desiredCamRadius = 13;
+    this.camera.radius = 13;
+    this.camera.beta = 1.24;
     this.camera.target.copyFrom(spawn);
   }
 
@@ -372,10 +380,13 @@ export class App {
     if (this.mode !== "designtest") return;
     this.input.detach();
     this.hud.hide();
+    this.effects?.dispose();
+    this.effects = undefined;
     this.avatar?.dispose();
     this.avatar = undefined;
     this.player?.dispose();
     this.player = undefined;
+    this.camera.fov = 0.8;
     this.mode = "design";
     this.designer?.onTestStopped();
   }
@@ -468,13 +479,18 @@ export class App {
     this.avatar = new SpriteAvatar(this.scene, this.player, character);
     this.input.attach();
     this.session = new PlaySession(this.scene, this.world, this.state, this.player);
-    this.player.onPoundLand = (pos) => this.session?.shockwave(pos);
+    this.effects = new PlayerEffects(this.scene, this.player);
+    this.player.onPoundLand = (pos) => {
+      this.session?.shockwave(pos);
+      this.effects?.burstAt(pos, 46);
+    };
     this.hud.setCharacter(character);
     this.hud.show();
     this.camera.target.copyFrom(this.player.position);
-    this.desiredCamRadius = 11.5;
-    this.camera.radius = 11.5;
-    this.camera.beta = 1.05;
+    // Sonic-style framing: further back and lower than the editor camera.
+    this.desiredCamRadius = 14.5;
+    this.camera.radius = 14.5;
+    this.camera.beta = 1.26;
     const player = this.player;
     const w = window as unknown as Record<string, unknown>;
     w.__player = player;
@@ -493,10 +509,13 @@ export class App {
     this.session?.dispose();
     this.session = undefined;
     this.hud.hide();
+    this.effects?.dispose();
+    this.effects = undefined;
     this.avatar?.dispose();
     this.avatar = undefined;
     this.player?.dispose();
     this.player = undefined;
+    this.camera.fov = 0.8;
     (window as unknown as Record<string, unknown>).__player = undefined;
     this.world.updateCulling(this.camera.position, Infinity); // un-cull everything for editing
     this.editor.enable();

@@ -6,7 +6,7 @@
 // collected coin markers, since the same World is reused for editing).
 
 import type { Mesh, Scene } from "@babylonjs/core";
-import { Color3, MeshBuilder, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Color3, MeshBuilder, Quaternion, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { toast } from "../editor/widgets";
 import type { GameState } from "./state";
 import type { PrefabInstance } from "../world/schema";
@@ -46,6 +46,8 @@ export class PlaySession {
   private goals: Pad[] = [];
   private movers: Mover[] = [];
   private won = false;
+  private spinT = 0;
+  private hiddenMarkers: string[] = [];
 
   constructor(
     private scene: Scene,
@@ -58,6 +60,11 @@ export class PlaySession {
       const pos = new Vector3(ent.pos[0], ent.pos[1], ent.pos[2]);
       if (ent.type === "coin") this.coins.push({ id: ent.id, pos });
       else if (ent.type === "checkpoint") this.checkpoints.push({ id: ent.id, pos });
+      else if (ent.type === "playerSpawn") {
+        // editor aid, not a game object — hide during the run
+        this.hiddenMarkers.push(ent.id);
+        world.entityMeshes.get(ent.id)?.setEnabled(false);
+      }
     }
 
     // gameplay prefabs become live objects for this run
@@ -108,6 +115,16 @@ export class PlaySession {
 
   update(dt: number) {
     const p = this.player.position;
+
+    // spin the coins (and bob them a touch)
+    this.spinT += dt;
+    for (const coin of this.coins) {
+      if (this.collected.has(coin.id)) continue;
+      const mesh = this.world.entityMeshes.get(coin.id);
+      if (!mesh) continue;
+      mesh.rotationQuaternion = Quaternion.RotationYawPitchRoll(this.spinT * 2.6, 0, Math.PI / 2);
+      mesh.position.y = coin.pos.y + Math.sin(this.spinT * 2 + coin.pos.x) * 0.12;
+    }
 
     // advance transient effects
     for (let i = this.effects.length - 1; i >= 0; i--) {
@@ -221,8 +238,16 @@ export class PlaySession {
       this.world.setKinematic(mv.inst.id, false);
       this.world.syncPrefabFromMesh(mv.inst.id);
     }
-    // restore collected coin markers for editing
+    // restore coin markers (pose + any collected) for editing
+    for (const coin of this.coins) {
+      const mesh = this.world.entityMeshes.get(coin.id);
+      if (!mesh) continue;
+      mesh.rotationQuaternion = null;
+      mesh.rotation.set(0, 0, Math.PI / 2);
+      mesh.position.copyFrom(coin.pos);
+    }
     for (const id of this.collected) this.world.entityMeshes.get(id)?.setEnabled(true);
+    for (const id of this.hiddenMarkers) this.world.entityMeshes.get(id)?.setEnabled(true);
     this.collected.clear();
     for (const fx of this.effects) {
       fx.mesh.material?.dispose();

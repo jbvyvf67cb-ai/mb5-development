@@ -81,13 +81,18 @@ browser-local Anthropic API key (same panel).
 
 ## The 3D rig
 
-`src/character/rig.ts` builds ~20 parts (body, head, ears, muzzle, eyes,
-jointed arms/legs, feet, accessory) sized by the morphs and colored by the
-palette, in one of two **styles**: `blocky` (voxel boxes) or `rounded`
-(spheres + capsules, organic Fall-Guys energy). Poses are procedural: run
-swings limbs with travel speed, jump tucks, fall spreads, dash leans, pound
-stars, glide T-poses — smoothly blended each frame. The same rig is the
-designer preview, the Test Drive body, and the in-level player avatar.
+`src/character/rig.ts` builds a real (procedural) skeleton: **two-segment
+arms with elbows and legs with knees**, a spin node for flips, and squash &
+stretch — in one of two **styles**: `blocky` (voxel boxes) or `rounded`
+(spheres + capsules, organic Fall-Guys energy). Animation is code-driven and
+physical: the run gait is **stride-synced to actual velocity** (feet don't
+slide), knees flex on the recovery swing, elbows pump; jumps tuck, falls
+spread, dashes lean, glides T-pose. The **double jump somersaults**, and the
+**ground pound is a real move** — a hang-time front flip windup, then the
+slam, with a shockwave + dust burst on impact. Landing squashes the body;
+rising stretches it. The rig is scaled to the physics capsule so the visual
+body is the hitbox, and the same rig serves the designer preview, Test Drive,
+and in-level play.
 
 **Accessories**: bow tie, cap, scarf, crown, glasses, halo (glows), horns,
 backpack, wings — all colored by the accessory color, working in both styles.

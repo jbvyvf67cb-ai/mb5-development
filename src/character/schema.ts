@@ -218,14 +218,14 @@ export interface DerivedMovement {
 export function deriveMovement(c: CharacterData): DerivedMovement {
   const s = c.stats;
   const heavy = c.body.weight; // 0..1
-  const runSpeed = 5.5 + s.speed * 0.75; // 6.25 .. 13
-  const jumpVelocity = 6.9 + s.jump * 0.5; // 7.4 .. 11.9
+  const runSpeed = 5.8 + s.speed * 0.8; // 6.6 .. 13.8
+  const jumpVelocity = 7.8 + s.jump * 0.55; // 8.35 .. 13.3 (fall gravity makes arcs snappy)
   return {
     runSpeed,
     jumpVelocity,
-    doubleJumpVelocity: jumpVelocity * 0.88,
-    groundAccel: 60 * (1 - heavy * 0.3),
-    airAccel: 22 * (1 - heavy * 0.25),
+    doubleJumpVelocity: jumpVelocity * 0.92,
+    groundAccel: 85 * (1 - heavy * 0.25),
+    airAccel: 30 * (1 - heavy * 0.2),
     mass: 45 + heavy * 55,
     dashSpeed: runSpeed * 2.2,
     capsuleHeight: 1.35 + 0.55 * c.body.height, // 1.76 .. 2.09-ish

@@ -74,10 +74,14 @@ JSON. See `docs/CHARACTERS.md`.
 ### Play
 
 WASD move, Space jump (+ the moves your character owns: `Shift` dash,
-hold-Space glide, `C` ground pound, wall jump), chase camera, coins,
-checkpoints, kill-plane respawn. Tab returns to editing. Pick who you play as
-with the top-bar character picker, or hit **▶ Use in Play** in the designer to
-jump straight from designing into playing.
+hold-Space glide, `C` ground pound — a flip-into-slam, wall jump; double jump
+somersaults). Game feel is tuned: asymmetric jump arcs (heavy fall gravity,
+jump-cut on release), snappy accel/decel, squash & stretch, run dust, dash
+trails, landing bursts, a blob shadow for landing reads, speed-FOV kick, and
+a collision-aware chase camera framed low and wide. Coins spin and glow
+(GlowLayer), checkpoints set respawn, kill-plane respawns you. Tab returns to
+editing; pick who you play as in the top bar or via the designer's
+**▶ Use in Play**.
 
 ### ✨ Assist — describe it, then tune it
 

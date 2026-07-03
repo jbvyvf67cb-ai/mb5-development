@@ -19,8 +19,16 @@ const COYOTE = 0.12;
 const JUMP_BUFFER = 0.12;
 const DASH_TIME = 0.16;
 const DASH_COOLDOWN = 0.6;
-const POUND_SPEED = -26;
 const GLIDE_FALL = -2.4;
+// Game-feel: arcs are asymmetric — normal gravity up, heavy gravity down, and
+// releasing jump early cuts the rise. Snappy, Mario-style.
+const FALL_GRAVITY_EXTRA = -20; // added while falling
+const JUMPCUT_GRAVITY_EXTRA = -30; // added while rising with jump released
+// Ground pound: a windup front-flip hang, THEN the slam.
+const POUND_WINDUP = 0.24;
+const POUND_SPEED = -34;
+const FLIP_DURATION = 0.45; // double-jump somersault
+const STRIDE = 2.1; // meters of travel per full run cycle (keeps feet planted)
 
 export type AvatarPose = "idle" | "run" | "jump" | "fall" | "dash" | "pound" | "glide";
 
@@ -30,12 +38,24 @@ export class PlayerController {
   grounded = false;
   /** Yaw the player is moving toward (for the chase camera + dash direction). */
   facing = 0;
-  /** Resolved pose for the sprite avatar. */
+  /** Resolved pose for the avatar rig. */
   pose: AvatarPose = "idle";
   /** Accumulates with ground travel — drives the run-cycle frame. */
   runPhase = 0;
   /** Current horizontal speed (m/s). */
   hSpeed = 0;
+  /** Front-flip progress 0..1 (double-jump somersault / pound windup). */
+  flip = 0;
+  /** True exactly on the frame the player touches down. */
+  justLanded = false;
+  /** |vy| at the moment of the last landing (for squash + dust). */
+  landImpact = 0;
+  /** Current vertical velocity (read by the avatar for stretch). */
+  vy = 0;
+  /** True while the dash burst is active (for trails/FOV). */
+  get isDashing(): boolean {
+    return this.dashTime > 0;
+  }
   /** Fired when a ground pound lands (position = feet). */
   onPoundLand?: (pos: Vector3) => void;
 
@@ -50,7 +70,12 @@ export class PlayerController {
   private airDashUsed = false;
   private dashDirX = 0;
   private dashDirZ = 1;
-  pounding = false; // read by PlaySession (pound-sensitive objects)
+  pounding = false; // any pound phase active (windup or slam)
+  private poundState: "none" | "windup" | "slam" = "none";
+  private windupT = 0;
+  private flipT = -1; // <0 = no somersault active
+  private jumpRising = false; // current ascent came from a player jump (gates jump-cut/boost)
+  private prevGrounded = true;
   private down = new Vector3(0, -1, 0);
   private ray = new Ray(Vector3.Zero(), this.down, 1);
 
@@ -102,6 +127,9 @@ export class PlayerController {
     const v = this.aggregate.body.getLinearVelocity();
     this.aggregate.body.setLinearVelocity(new Vector3(v.x, vy, v.z));
     this.pounding = false;
+    this.poundState = "none";
+    this.dashTime = 0; // a spring beats a dash hover
+    this.jumpRising = false; // spring rises decay at pure gravity (no jump-cut)
     this.doubleJumpReady = true;
     this.airDashUsed = false;
   }
@@ -127,7 +155,13 @@ export class PlayerController {
     this.aggregate.body.setLinearVelocity(Vector3.Zero());
     this.aggregate.body.setAngularVelocity(Vector3.Zero());
     this.pounding = false;
+    this.poundState = "none";
+    this.flipT = -1;
     this.dashTime = 0;
+    this.jumpRising = false;
+    this.prevGrounded = true; // don't fire a phantom landing at the respawn point
+    this.vy = 0;
+    this.landImpact = 0;
     // Force the physics body to read the mesh transform for one step (otherwise
     // the dynamic body's cached pose snaps the capsule straight back).
     this.aggregate.body.disablePreStep = false;
@@ -189,10 +223,14 @@ export class PlayerController {
     const targetZ = (fwdZ * input.moveZ + rightZ * input.moveX) * speed;
 
     const vyNow = vel.y;
-    this.grounded = this.checkGround() && vyNow < 2;
+    this.grounded = this.checkGround() && vyNow < 2 && this.poundState !== "windup";
+    this.justLanded = this.grounded && !this.prevGrounded;
+    if (this.justLanded) this.landImpact = Math.abs(this.vy);
+    this.prevGrounded = this.grounded;
     if (this.grounded) {
       this.airDashUsed = false;
       this.doubleJumpReady = true;
+      if (this.poundState !== "slam") this.flipT = -1; // cancel somersault on touch
     }
 
     // Face the movement direction.
@@ -202,22 +240,37 @@ export class PlayerController {
     }
 
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
+    // coyote/buffer tick every frame (freezing them inside one branch caused
+    // phantom buffered jumps after dashes/pounds)
+    this.coyote = this.grounded ? COYOTE : Math.max(0, this.coyote - dt);
+    this.buffer = input.jumpPressed ? JUMP_BUFFER : Math.max(0, this.buffer - dt);
 
-    // --- ground pound ---
+    // --- somersault progress (double jump) ---
+    if (this.flipT >= 0) {
+      this.flipT += dt;
+      if (this.flipT >= FLIP_DURATION) this.flipT = -1;
+    }
+
+    // --- ground pound: windup flip, then slam ---
     if (
       input.poundPressed &&
       this.has.has("groundPound") &&
       !this.grounded &&
-      !this.pounding
+      this.poundState === "none"
     ) {
-      this.pounding = true;
+      this.poundState = "windup";
+      this.windupT = 0;
+      this.flipT = -1;
       this.dashTime = 0;
     }
-    if (this.pounding && this.grounded) {
-      this.pounding = false;
+    let poundPop = false;
+    if (this.poundState === "slam" && this.grounded && this.vy < -1) {
+      this.poundState = "none";
       this.onPoundLand?.(this.position.clone().addInPlaceFromFloats(0, -this.mv.capsuleHeight / 2, 0));
-      vel.y = 4.2; // pop-back
+      poundPop = true; // applied to vy below — writing vel.y is a dead store
+      this.buffer = 0; // a jump buffered before the pound must not fire on the landing
     }
+    this.pounding = this.poundState !== "none";
 
     // --- dash ---
     if (
@@ -251,22 +304,32 @@ export class PlayerController {
       vx = this.dashDirX * this.mv.dashSpeed;
       vz = this.dashDirZ * this.mv.dashSpeed;
       vy = 0;
-    } else if (this.pounding) {
-      vx = vel.x * 0.35;
-      vz = vel.z * 0.35;
+    } else if (this.poundState === "windup") {
+      // hang + front flip, then drop
+      this.windupT += dt;
+      vx = vel.x * 0.2;
+      vz = vel.z * 0.2;
+      vy = 1.4;
+      if (this.windupT >= POUND_WINDUP) this.poundState = "slam";
+    } else if (this.poundState === "slam") {
+      vx = vel.x * 0.3;
+      vz = vel.z * 0.3;
       vy = POUND_SPEED;
     } else {
-      const accel = (this.grounded ? this.mv.groundAccel : this.mv.airAccel) * dt;
+      // Snappy steering: full accel toward the stick; harder decel when idle
+      // or reversing (kills the ice-skater feel).
+      const base = this.grounded ? this.mv.groundAccel : this.mv.airAccel;
+      const reversing = vel.x * targetX + vel.z * targetZ < -0.1;
+      const factor = mag < 0.1 ? 1.7 : reversing ? 1.5 : 1;
+      const accel = base * factor * dt;
       vx = vel.x + clamp(targetX - vel.x, -accel, accel);
       vz = vel.z + clamp(targetZ - vel.z, -accel, accel);
 
-      // Jump: coyote + buffer for the ground jump; double jump / wall jump in air.
-      this.coyote = this.grounded ? COYOTE : Math.max(0, this.coyote - dt);
-      this.buffer = input.jumpPressed ? JUMP_BUFFER : Math.max(0, this.buffer - dt);
       if (this.buffer > 0 && this.coyote > 0) {
         vy = this.mv.jumpVelocity;
         this.buffer = 0;
         this.coyote = 0;
+        this.jumpRising = true;
       } else if (input.jumpPressed && !this.grounded) {
         const wall = this.has.has("wallJump") ? this.checkWall() : null;
         if (wall) {
@@ -276,26 +339,53 @@ export class PlayerController {
           this.facing = Math.atan2(wall.nx, wall.nz);
           this.doubleJumpReady = true; // wall contact refreshes the air kit
           this.airDashUsed = false;
+          this.buffer = 0;
+          this.jumpRising = true;
         } else if (this.has.has("doubleJump") && this.doubleJumpReady) {
           vy = this.mv.doubleJumpVelocity;
           this.doubleJumpReady = false;
+          this.flipT = 0; // somersault!
+          this.buffer = 0;
+          this.jumpRising = true;
         }
-      } else if (input.jumpHeld && vy > 0.5) {
-        vy += 5.5 * dt; // variable height while rising
+      } else if (input.jumpHeld && vy > 0.5 && this.jumpRising) {
+        vy += 5.5 * dt; // variable height while rising (jumps only, not springs)
       }
 
-      // Glide: hold jump while falling.
-      if (this.has.has("glide") && !this.grounded && input.jumpHeld && vy < GLIDE_FALL) {
-        vy = GLIDE_FALL;
+      const gliding = this.has.has("glide") && !this.grounded && input.jumpHeld && vy < GLIDE_FALL;
+      if (gliding) {
+        vy = GLIDE_FALL; // glide caps the fall
+      } else if (!this.grounded) {
+        // asymmetric arc: heavy on the way down; releasing jump cuts the rise —
+        // but only for rises the player jumped into (springs keep full height)
+        if (vy < 0) {
+          vy += FALL_GRAVITY_EXTRA * dt;
+          this.jumpRising = false;
+        } else if (!input.jumpHeld && this.jumpRising) {
+          vy += JUMPCUT_GRAVITY_EXTRA * dt;
+        }
       }
+      if (this.grounded) this.jumpRising = false;
     }
 
+    if (poundPop) vy = 4.6; // the pop-back, applied where it actually counts
     this.aggregate.body.setLinearVelocity(new Vector3(vx, vy, vz));
+    this.vy = vy;
+
+    // --- flip progress for the rig ---
+    this.flip =
+      this.poundState === "windup"
+        ? Math.min(1, this.windupT / POUND_WINDUP)
+        : this.flipT >= 0
+          ? Math.min(1, this.flipT / FLIP_DURATION)
+          : 0;
 
     // --- pose resolution for the avatar ---
     this.hSpeed = Math.hypot(vx, vz);
-    this.runPhase = (this.runPhase + this.hSpeed * dt * 0.16) % 1;
-    if (this.pounding) this.pose = "pound";
+    // stride-synced gait: feet stay planted instead of sliding
+    this.runPhase = (this.runPhase + (this.hSpeed * dt) / STRIDE) % 1;
+    if (this.poundState === "slam") this.pose = "pound";
+    else if (this.poundState === "windup") this.pose = "jump"; // tucked, mid-flip
     else if (this.dashTime > 0) this.pose = "dash";
     else if (!this.grounded && this.has.has("glide") && input.jumpHeld && vy <= GLIDE_FALL + 0.01) this.pose = "glide";
     else if (!this.grounded) this.pose = vy > 1 ? "jump" : "fall";
