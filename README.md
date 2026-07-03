@@ -60,31 +60,39 @@ repo (see below).
 
 A real tab (switch Build ⇄ Characters freely). The character is a **procedural
 3D rig** rendered live on a physical stage: body sliders
-(height/width/weight/head/ears) reshape the model *and* the physics capsule,
+(height/width/weight/head/ears) reshape the model *and* the physics capsule —
+size is felt (a 1.6-height giant stands 3.2 m and the camera frames it wide),
 colors + accessory restyle it, stat sliders (speed/jump/attack/defense) show
-live-derived movement numbers, and the special-move loadout gates the verbs
-(double jump, dash, glide, ground pound, wall jump). **🧪 Test Drive** runs the
-real controller on the stage (steps, a dash gap, a wall-jump channel) so you
-feel a character before shipping it. The ✨ Assist box generates characters
-from a description **and/or an attached image** — mapped onto the same rig
-parameters so AI characters move exactly like hand-made ones. Presets:
-**Joshua** the bear, Scout, Boulder; everything autosaves and round-trips as
-JSON. See `docs/CHARACTERS.md`.
+live-derived movement numbers, and the **move loadout** picks one move per
+trigger slot from a **50+ move catalog** (jumps, glides, dashes, wall moves,
+slams, taunts, punches, kicks, passives — see `docs/CHARACTERS.md`).
+**🧪 Test Drive** runs the real controller on the stage (steps, a dash gap, a
+wall-jump channel) so you feel a character before shipping it. The ✨ Assist
+box generates characters from a description **and/or an attached image** —
+mapped onto the same rig parameters and move slots so AI characters move
+exactly like hand-made ones. Presets: **Joshua** the bear, **Prez TT**,
+Boulder; everything autosaves and round-trips as JSON.
 
 ### Play
 
-WASD move, Space jump, **J punch combo / K kick / K-in-air dive kick** (+ the
-moves your character owns: `Shift` dash, hold-Space glide, `C` ground pound —
-a flip-into-slam, wall jump, air spin attack; double jump somersaults).
-Punches and kicks animate arms/legs/torso, scale with the attack stat, send
-crates and balls flying (they're physical during runs), and poof enemies for
-coins. Game feel is tuned: asymmetric jump arcs (heavy fall gravity,
-jump-cut on release), snappy accel/decel, squash & stretch, run dust, dash
-trails, landing bursts, a blob shadow for landing reads, speed-FOV kick, and
-a collision-aware chase camera framed low and wide. Coins spin and glow
-(GlowLayer), checkpoints set respawn, kill-plane respawns you. Tab returns to
-editing; pick who you play as in the top bar or via the designer's
-**▶ Use in Play**.
+WASD move, Space jump, then **your loadout**: one equipped move per trigger
+slot — Space-in-air (double jump / rocket hop / blink…), hold-Space-falling
+(glide / parachute / helicopter ears…), Shift (dash / spin roll / boost…),
+Shift-in-air (air dash / dive bomb…), Space-at-wall (wall jump / cling / wall
+run), C-in-air (ground pound / meteor slam / bounce stomp…), C (shock stomp /
+war roar / taunts), J and K attacks and kicks on ground and air, plus
+passives (hard landings roll into a run, reversals skid). Every move is data
+executed by one interpreter and animated over generic rig channels, so all
+50+ work on any character. Accessories carry secondary motion — the scarf
+floats when you glide. Strikes scale with the attack stat, send crates and
+balls flying (physical during runs), and poof enemies for coins. Game feel is
+tuned per `docs/MOVEMENT.md` (Sonic Dream Team as the bar): asymmetric jump
+arcs, jump-cut, coyote time + buffering, snappy accel/decel, squash &
+stretch, run dust, trails, landing bursts, a blob shadow for landing reads,
+speed-FOV kick, and a collision-aware chase camera that scales its framing to
+character size. Coins spin and glow (GlowLayer), checkpoints set respawn,
+kill-plane respawns you. Tab returns to editing; pick who you play as in the
+top bar or via the designer's **▶ Use in Play**.
 
 ### ✨ Assist — describe it, then tune it
 

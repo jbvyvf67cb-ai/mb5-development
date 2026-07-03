@@ -42,48 +42,58 @@ the character in a level.
     "attack": 6,       // stored for combat (coming later)
     "defense": 6
   },
-  "moves": ["doubleJump", "dash", "groundPound"]
+  "moves": ["doubleJump", "glide", "airDash", "homingStrike", "rollLanding"]
 }
 ```
 
 `deriveMovement()` in `src/character/schema.ts` is the single source of truth
 for how stats+body become movement numbers (run/jump/dash speed, acceleration,
-mass, capsule size). The designer shows the derived numbers live.
+mass, capsule size). The designer shows the derived numbers live. Size is
+FELT: `height` maps aggressively to the capsule (0.85 → 1.55 m, 1.6 → 3.2 m),
+and the chase camera frames giants wide and runts close.
 
-## Combat
+## The move system — 50+ moves, one interpreter
 
-Every character has the base attacks — no equip needed:
+A move is **data, not code** (`src/character/moves.ts`): a `MoveSpec` = a
+trigger **slot** + physics **phases** (forward bursts, vertical holds,
+until-ground slams, blinks, homing, hover, spins, strike windows, FX) +
+animation keyframes over the rig's **generic channel set** (shoulders, elbows,
+hips, knees, torso pitch/yaw, body spin, squash). One interpreter in the
+controller executes every move; one channel player in the rig animates every
+move. Joints are placed proportionally on every body, so a move authored once
+passes the eye test on every character — hand-made or AI-generated, blocky or
+rounded, giant or runt.
 
-| Attack | Control | Notes |
+**Slots** (equip one move each; the designer shows a dropdown per slot):
+
+| Slot | Trigger | Catalog |
 | --- | --- | --- |
-| Punch combo | J, J, J | jab → cross → two-handed finisher (chain during the swing) |
-| Kick | K | roundhouse, bigger knockback |
-| Dive kick | K (in air) | flying kick that surges forward |
-| Spin attack | J (in air) | *equipable move* — 720° arms-out cyclone, hits all around |
+| jumpAir | Space (in air) | Double Jump, Triple Jump, Rocket Hop, Blink Step, Wing Flaps, Moon Flip |
+| fallHold | hold Space (falling) | Glide, Parachute, Dive Glider, Helicopter Ears, Cape Float, Balloon Belly |
+| dashGround | Shift | Dash, Spin Roll, Power Slide, Backstep, Charge Ram, Boost |
+| dashAir | Shift (in air) | Air Dash, Dive Bomb, Corkscrew, Air Brake |
+| wall | Space (at a wall) | Wall Jump, Wall Cling, Wall Run |
+| powerAir | C (in air) | Ground Pound, Meteor Slam, Bounce Stomp, Drill Dive, Belly Flop, Cannonball |
+| powerGround | C | Shock Stomp, War Roar, Dance, Flex, Victory Flip |
+| attackGround | J | Punch Combo (3-hit chain), Hammer Fists, Rapid Jabs, Spinning Backfist, Shoulder Bash |
+| attackAir | J (in air) | Spin Attack, Sky Uppercut, Dive Elbow, Homing Strike |
+| kickGround | K | Roundhouse, Sweep Kick, Flip Kick, Axe Kick, Breakdance |
+| kickAir | K (in air) | Dive Kick, Hurricane Kick, Flying Knee, Stomp Kick |
+| passive | automatic | Roll Landing (hard landings keep momentum), Stylish Skid |
 
-Knockback scales with the **attack** stat (`strikePower = 6 + attack × 1.5`).
-Strikes shove dynamic props (crates and balls become physical during a run —
-punch them off cliffs) and poof enemy markers for +2 coins each. Arms, legs,
-and torso all animate: jabs twist the torso, kicks lean back, the finisher
-lunges.
-
-## Special moves
-
-| Move | Control | Effect |
-| --- | --- | --- |
-| Double Jump | Space (in air) | one extra jump |
-| Dash | Shift | 0.16 s burst at 2.2× run speed, hovers; once per airtime |
-| Glide | hold Space while falling | fall capped at −2.4 m/s |
-| Ground Pound | C (in air) | slam at −26 m/s, shockwave ring + pop-back |
-| Wall Jump | Space against a wall | kick away; refreshes double jump + air dash |
-
-Equip any subset — the Play HUD only shows the controls the character owns.
+Empty attack/kick slots fall back to the base kit (Punch Combo / Roundhouse /
+Dive Kick) — everyone can fight. Wall contact and springs refresh air moves.
+Knockback scales with the **attack** stat (`strikePower = 6 + attack × 1.5`);
+strikes shove dynamic props (crates and balls are physical during a run) and
+poof enemy markers for +2 coins. The Play HUD lists the exact resolved kit.
 
 ## Presets & persistence
 
-Built-ins: **Joshua** (the bear — huge, slow, devastating: attack 10, spin
-attack + ground pound + charge dash), **Prez TT** (small/fast rounded runner,
-glide + wall jump), **Boulder** (heavy tank, pound + dash). Presets fork
+Built-ins: **Joshua** (the 3.2 m bear — huge, slow, devastating: ground pound,
+war roar, hammer fists, sweep kick), **Prez TT** (small/fast rounded runner:
+double jump, glide, wall jump, air dash, boost, homing strike, roll + skid
+passives), **Boulder** (heavy tank: meteor slam, charge ram, shock stomp,
+shoulder bash, axe kick). Presets fork
 automatically when edited; user characters autosave to the browser
 (`localStorage`), and can be exported/imported as JSON. **Use in Play** sets
 the active character that Play mode spawns.
@@ -105,12 +115,18 @@ stretch — in one of two **styles**: `blocky` (voxel boxes) or `rounded`
 (spheres + capsules, organic Fall-Guys energy). Animation is code-driven and
 physical: the run gait is **stride-synced to actual velocity** (feet don't
 slide), knees flex on the recovery swing, elbows pump; jumps tuck, falls
-spread, dashes lean, glides T-pose. The **double jump somersaults**, and the
-**ground pound is a real move** — a hang-time front flip windup, then the
-slam, with a shockwave + dust burst on impact. Landing squashes the body;
-rising stretches it. The rig is scaled to the physics capsule so the visual
-body is the hitbox, and the same rig serves the designer preview, Test Drive,
-and in-level play.
+spread, dashes lean, glides T-pose. Move animations arrive as generic channel
+targets (see the move system above) and blend over the base gait; body spins
+(flips, corkscrews, cyclones) ease home to the nearest full turn when
+interrupted — never a snap. Landing squashes the body; rising stretches it.
+The rig is scaled to the physics capsule so the visual body is the hitbox,
+and the same rig serves the designer preview, Test Drive, and in-level play.
 
-**Accessories**: bow tie, cap, scarf, crown, glasses, halo (glows), horns,
-backpack, wings — all colored by the accessory color, working in both styles.
+**Accessories are alive** (secondary motion, not decoration): the **scarf**
+is a two-segment tail that trails, floats, and flutters with speed — it
+streams while gliding and dashing; **wings** flap when airborne and spread
+wide in a glide; **ears** flop against vertical motion, bounce at a jog, and
+become spinning rotor blades for Helicopter Ears; the **halo** bobs on its
+own time and tips against motion. Wardrobe: bow tie, cap, scarf, crown,
+glasses, halo (glows), horns, backpack, wings — all colored by the accessory
+color, working in both styles.

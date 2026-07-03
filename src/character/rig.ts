@@ -14,21 +14,31 @@
 import { Color3, Mesh, MeshBuilder, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
 import type { Scene } from "@babylonjs/core";
 import type { CharacterData } from "./schema";
+import type { ChannelPose } from "./moves";
 import type { Vec3 } from "../world/schema";
 
 export type RigPose = "idle" | "run" | "jump" | "fall" | "dash" | "pound" | "glide";
 
 export interface RigFx {
-  /** Front-flip progress 0..1 (somersault / pound windup). */
-  flip?: number;
   /** Vertical squash/stretch factor (1 = neutral). */
   stretch?: number;
-  /** Active attack animation (overlays the base pose). */
-  attack?: { kind: string; t: number };
+  /** Generic move overlay: semantic channel targets + blend amount 0..1. */
+  movePose?: { pose: ChannelPose; a: number };
+  /** Absolute body rotations from the active move (radians). When they stop
+   * arriving, the rig eases home to the nearest full turn — interrupted flips
+   * finish instead of snapping. */
+  spinX?: number;
+  spinY?: number;
+  /** Secondary-motion drivers: accessories are LIVE (scarves trail with
+   * speed, wings flap airborne, ears flop with vy, halos lag). */
+  vy?: number;
+  speed?: number;
+  airborne?: boolean;
+  gliding?: boolean;
+  earSpin?: boolean;
 }
 
 const shade = (c: Vec3, f: number): Color3 => new Color3(c[0] * f, c[1] * f, c[2] * f);
-const ease = (t: number) => t * t * (3 - 2 * t);
 
 interface Joint {
   node: TransformNode;
@@ -56,7 +66,17 @@ export class CharacterRig {
   private baseTorsoY: number;
   private spinY: number;
   private spinCur = 0;
+  private spinYCur = 0;
   private clock = 0;
+  // live accessory + anatomy refs for secondary motion
+  private scarfA: TransformNode | null = null;
+  private scarfB: TransformNode | null = null;
+  private wings: Array<{ mesh: Mesh; side: -1 | 1 }> = [];
+  private ears: Array<{ pivot: TransformNode; side: -1 | 1 }> = [];
+  private earRoot: TransformNode | null = null;
+  private earSpinCur = 0;
+  private halo: Mesh | null = null;
+  private haloBaseY = 0;
 
   constructor(scene: Scene, ch: CharacterData, name = "rig", opts: { targetHeight?: number } = {}) {
     this.scene = scene;
@@ -155,14 +175,21 @@ export class CharacterRig {
     muzzleP.position.set(0, bodyH + headS * 0.3, faceZ + 0.02);
     const nose = part("nose", 0.05, 0.04, 0.04, ink, this.torso);
     nose.position.set(0, bodyH + headS * 0.4, faceZ + (style === "rounded" ? 0.1 : 0.085));
+    // ears hang off pivots (so they can flop with motion — or helicopter)
+    this.earRoot = new TransformNode(`${name}:earRoot`, scene);
+    this.earRoot.parent = this.torso;
+    this.earRoot.position.y = headTopY;
     for (const side of [-1, 1] as const) {
       const eye = part(`eye${side}`, 0.055, 0.07, 0.03, ink, this.torso);
       eye.position.set(side * headS * 0.28, bodyH + headS * 0.62, faceZ + 0.005);
-      const ear = part(`ear${side}`, earS, earS, earS * 0.5, furDark, this.torso);
-      ear.position.set(side * headS * 0.42, headTopY + earS * 0.32, 0);
-      const earIn = part(`earIn${side}`, earS * 0.55, earS * 0.55, earS * 0.52, muzzle, this.torso);
-      earIn.position.copyFrom(ear.position);
-      earIn.position.z += style === "rounded" ? 0.02 : 0.005;
+      const pivot = new TransformNode(`${name}:earPivot${side}`, scene);
+      pivot.parent = this.earRoot;
+      pivot.position.set(side * headS * 0.42, 0, 0);
+      const ear = part(`ear${side}`, earS, earS, earS * 0.5, furDark, pivot);
+      ear.position.y = earS * 0.32;
+      const earIn = part(`earIn${side}`, earS * 0.55, earS * 0.55, earS * 0.52, muzzle, pivot);
+      earIn.position.set(0, earS * 0.32, style === "rounded" ? 0.02 : 0.005);
+      this.ears.push({ pivot, side });
     }
 
     // --- arms: shoulder → upper arm → ELBOW → forearm + paw ---
@@ -212,9 +239,19 @@ export class CharacterRig {
     } else if (acc === "scarf") {
       const band = part("scarf", bodyW * 1.08, 0.1, bodyD * 1.12, accent, this.torso);
       band.position.y = bodyH * 0.97;
-      const tail = box("scarfTail", 0.1, 0.3, 0.03, accent, this.torso);
-      tail.position.set(-bodyW * 0.3, bodyH * 0.78, -bodyD / 2 - 0.03);
-      tail.rotation.x = 0.25;
+      // the tail is a two-segment chain hung from the neck — it trails,
+      // floats, and flutters with motion (animated in update)
+      this.scarfA = new TransformNode(`${name}:scarfA`, scene);
+      this.scarfA.parent = this.torso;
+      this.scarfA.position.set(-bodyW * 0.22, bodyH * 0.94, -bodyD / 2 - 0.03);
+      this.scarfA.rotation.x = 0.25;
+      const seg1 = box("scarfSeg1", 0.11, 0.27, 0.03, accent, this.scarfA);
+      seg1.position.y = -0.135;
+      this.scarfB = new TransformNode(`${name}:scarfB`, scene);
+      this.scarfB.parent = this.scarfA;
+      this.scarfB.position.y = -0.27;
+      const seg2 = box("scarfSeg2", 0.095, 0.25, 0.028, this.mat(shade(c.accent, 0.85)), this.scarfB);
+      seg2.position.y = -0.125;
     } else if (acc === "crown") {
       const ring = MeshBuilder.CreateCylinder(`${name}:crown`, { diameter: headS * 0.85, height: 0.1, tessellation: 12 }, scene);
       ring.material = accent;
@@ -246,6 +283,8 @@ export class CharacterRig {
       halo.parent = this.torso;
       halo.isPickable = false;
       halo.position.y = headTopY + earS + 0.14;
+      this.halo = halo;
+      this.haloBaseY = halo.position.y;
     } else if (acc === "horns") {
       for (const side of [-1, 1] as const) {
         const horn = MeshBuilder.CreateCylinder(`${name}:horn${side}`, { diameterTop: 0, diameterBottom: 0.09, height: 0.22, tessellation: 8 }, scene);
@@ -270,6 +309,7 @@ export class CharacterRig {
         wing.position.set(side * bodyW * 0.52, bodyH * 0.72, -bodyD / 2 - 0.05);
         wing.rotation.z = side * 0.55;
         wing.rotation.y = -side * 0.3;
+        this.wings.push({ mesh: wing, side });
       }
     }
 
@@ -387,65 +427,31 @@ export class CharacterRig {
         break;
     }
 
-    // --- attack overlays: arms punch, legs kick, torso twists ---
+    // --- generic move overlay: any move's ChannelPose blends over the base
+    // pose. One player animates the entire 50+ move catalog on every body.
     let torsoYaw = 0;
-    let spinAtkYaw: number | null = null;
-    const atk = fx.attack;
-    if (atk) {
-      // impact envelope: fast windup → hold → recover
-      const wind = ease(Math.min(1, atk.t / 0.4));
-      const rec = ease(Math.max(0, (atk.t - 0.62) / 0.38));
-      const a = wind * (1 - rec);
-      const mix = (j: Joint, tx: number, tz?: number) => {
-        j.tx = j.tx + (tx - j.tx) * a;
-        if (tz !== undefined) j.tz = j.tz + (tz - j.tz) * a;
+    const mp = fx.movePose;
+    if (mp && mp.a > 0) {
+      const a = Math.min(1, mp.a);
+      const P = mp.pose;
+      const mix2 = (j: Joint, v?: [number, number]) => {
+        if (!v) return;
+        j.tx += (v[0] - j.tx) * a;
+        j.tz += (v[1] - j.tz) * a;
       };
-      switch (atk.kind) {
-        case "punch1": // right jab
-          mix(this.shoulderR, -1.62, -0.06);
-          mix(this.elbowR, -0.08);
-          mix(this.shoulderL, 0.45, 0.25);
-          torsoYaw = -0.38 * a;
-          break;
-        case "punch2": // left cross
-          mix(this.shoulderL, -1.62, 0.06);
-          mix(this.elbowL, -0.08);
-          mix(this.shoulderR, 0.45, -0.25);
-          torsoYaw = 0.38 * a;
-          break;
-        case "punch3": // both-arm slam
-          mix(this.shoulderL, -1.75, 0.15);
-          mix(this.shoulderR, -1.75, -0.15);
-          mix(this.elbowL, -0.12);
-          mix(this.elbowR, -0.12);
-          torsoPitch += 0.35 * a;
-          break;
-        case "kick": // right roundhouse
-          mix(this.hipR, -1.8, -0.12);
-          mix(this.kneeR, 0.12);
-          mix(this.hipL, 0.25);
-          mix(this.shoulderL, 0.2, 0.9);
-          mix(this.shoulderR, 0.2, -0.9);
-          torsoPitch -= 0.3 * a;
-          torsoYaw = 0.3 * a;
-          break;
-        case "airkick": // flying double kick
-          mix(this.hipL, -1.3, 0.08);
-          mix(this.hipR, -1.0, -0.08);
-          mix(this.kneeL, 0.18);
-          mix(this.kneeR, 0.35);
-          mix(this.shoulderL, 0.9, 0.5);
-          mix(this.shoulderR, 0.9, -0.5);
-          torsoPitch += 0.5 * a;
-          break;
-        case "spin": // 720° arms-out cyclone
-          mix(this.shoulderL, 0, 1.57);
-          mix(this.shoulderR, 0, -1.57);
-          mix(this.elbowL, -0.05);
-          mix(this.elbowR, -0.05);
-          spinAtkYaw = ease(atk.t) * Math.PI * 4; // two full turns, ends aligned
-          break;
-      }
+      const mix1 = (j: Joint, v?: number) => {
+        if (v !== undefined) j.tx += (v - j.tx) * a;
+      };
+      mix2(this.shoulderL, P.shL);
+      mix2(this.shoulderR, P.shR);
+      mix1(this.elbowL, P.elL);
+      mix1(this.elbowR, P.elR);
+      mix2(this.hipL, P.hipL);
+      mix2(this.hipR, P.hipR);
+      mix1(this.kneeL, P.kneeL);
+      mix1(this.kneeR, P.kneeR);
+      if (P.pitch !== undefined) torsoPitch += (P.pitch - torsoPitch) * a;
+      if (P.yaw !== undefined) torsoYaw = P.yaw * a;
     }
 
     const k = Math.min(1, dt * 16);
@@ -456,20 +462,14 @@ export class CharacterRig {
     this.torso.rotation.x += (torsoPitch - this.torso.rotation.x) * k;
     this.torso.rotation.y += (torsoYaw - this.torso.rotation.y) * Math.min(1, dt * 20);
     this.torso.position.y = this.baseTorsoY + torsoBob;
-    this.spin.rotation.y = spinAtkYaw ?? 0;
 
-    // flip (somersault / pound windup) around the center of mass.
-    // FRONT flip = positive X (top of the head travels forward). When a flip
-    // is interrupted, finish the turn smoothly instead of snapping upright.
-    const flip = fx.flip ?? 0;
-    if (flip > 0) {
-      this.spinCur = ease(flip) * Math.PI * 2;
-    } else {
-      const target = this.spinCur > Math.PI ? Math.PI * 2 : 0;
-      this.spinCur += (target - this.spinCur) * Math.min(1, dt * 14);
-      if (Math.abs(target - this.spinCur) < 0.02) this.spinCur = 0;
-    }
+    // body spins around the center of mass. FRONT flip = positive X (top of
+    // the head travels forward). Moves feed absolute angles; when they stop,
+    // ease home to the nearest full turn — interrupted spins finish, never snap.
+    this.spinCur = this.settleSpin(this.spinCur, fx.spinX, dt);
     this.spin.rotation.x = this.spinCur;
+    this.spinYCur = this.settleSpin(this.spinYCur, fx.spinY, dt);
+    this.spin.rotation.y = this.spinYCur;
 
     // squash & stretch (volume-ish preserving); shift the pivot down so the
     // FEET stay planted while the body compresses
@@ -477,6 +477,64 @@ export class CharacterRig {
     const xz = 1 / Math.sqrt(Math.max(0.5, s));
     this.spin.scaling.set(xz, s, xz);
     this.spin.position.y = this.spinY * s;
+
+    // --- secondary motion: nothing on the body is decorative-only ---
+    const vy = fx.vy ?? 0;
+    const speed = fx.speed ?? 0;
+    const sway = Math.min(1, speed / 8);
+    if (this.scarfA && this.scarfB) {
+      // the scarf trails and FLOATS: lift with speed, glide, and fall
+      const lift = Math.min(1.35, speed * 0.09 + (fx.gliding ? 0.55 : 0) + Math.max(0, -vy) * 0.06);
+      const freq = 5 + speed * 0.9;
+      const flutter = Math.sin(this.clock * freq) * (0.06 + sway * 0.16 + (fx.gliding ? 0.1 : 0));
+      this.scarfA.rotation.x += (0.25 + lift + flutter - this.scarfA.rotation.x) * Math.min(1, dt * 7);
+      this.scarfB.rotation.x +=
+        (lift * 0.5 + Math.sin(this.clock * freq - 1.1) * (0.1 + sway * 0.22) - this.scarfB.rotation.x) *
+        Math.min(1, dt * 5.5);
+      this.scarfA.rotation.z = Math.sin(this.clock * 2.3) * 0.06 * (0.4 + sway);
+    }
+    for (const w of this.wings) {
+      // flap airborne, spread wide while gliding, breathe on the ground
+      const base = fx.gliding ? 1.15 : 0.55;
+      const flap = fx.airborne ? Math.sin(this.clock * 11) * (fx.gliding ? 0.12 : 0.5) : Math.sin(this.clock * 2) * 0.06;
+      w.mesh.rotation.z += (w.side * (base + flap) - w.mesh.rotation.z) * Math.min(1, dt * 12);
+    }
+    if (this.earRoot) {
+      if (fx.earSpin) {
+        // helicopter mode: ears flatten into rotor blades and whirl
+        this.earSpinCur += dt * 26;
+        this.earRoot.rotation.y = this.earSpinCur;
+        for (const e of this.ears) {
+          e.pivot.rotation.z += (-e.side * 1.25 - e.pivot.rotation.z) * Math.min(1, dt * 10);
+        }
+      } else {
+        this.earSpinCur = this.settleSpin(this.earSpinCur, undefined, dt);
+        this.earRoot.rotation.y = this.earSpinCur;
+        for (const e of this.ears) {
+          // ears flop against vertical motion + a jog bounce at speed
+          const flop = Math.max(-0.55, Math.min(0.3, -vy * 0.045)) + Math.sin(this.clock * 9 + e.side) * 0.05 * sway;
+          e.pivot.rotation.x += (flop - e.pivot.rotation.x) * Math.min(1, dt * 9);
+          e.pivot.rotation.z += (0 - e.pivot.rotation.z) * Math.min(1, dt * 8);
+        }
+      }
+    }
+    if (this.halo) {
+      // the halo lags: bobs on its own time, tips against vertical motion
+      this.halo.position.y = this.haloBaseY + Math.sin(this.clock * 2.4) * 0.025;
+      this.halo.rotation.x += (Math.max(-0.3, Math.min(0.3, -vy * 0.02)) - this.halo.rotation.x) * Math.min(1, dt * 6);
+      this.halo.rotation.y += dt * 0.8;
+    }
+  }
+
+  /** Ease a spin angle home to the nearest full turn once its move ends. */
+  private settleSpin(cur: number, target: number | undefined, dt: number): number {
+    if (target !== undefined) return target;
+    if (cur === 0) return 0;
+    const TAU = Math.PI * 2;
+    const home = Math.round(cur / TAU) * TAU;
+    let next = cur + (home - cur) * Math.min(1, dt * 14);
+    if (Math.abs(next - home) < 0.02) next = 0; // a full turn looks identical to 0
+    return next;
   }
 
   setYaw(yaw: number) {

@@ -2,6 +2,7 @@
 
 import type { GameState } from "../game/state";
 import type { CharacterData } from "../character/schema";
+import { resolveLoadout, SLOT_LABELS, type SlotKey } from "../character/moves";
 
 export class Hud {
   root: HTMLDivElement;
@@ -45,16 +46,15 @@ export class Hud {
     this.unsub = state.on("coins", (n) => (this.coinEl.textContent = String(n)));
   }
 
-  /** Show who's playing and the controls their move set unlocks. */
+  /** Show who's playing and the exact kit their loadout resolves to. */
   setCharacter(c: CharacterData) {
     this.nameEl.textContent = c.name;
-    const parts = ["WASD move", "Space jump", "J punch", "K kick"];
-    if (c.moves.includes("doubleJump")) parts.push("Space ×2 double jump");
-    if (c.moves.includes("glide")) parts.push("hold Space glide");
-    if (c.moves.includes("dash")) parts.push("Shift dash");
-    if (c.moves.includes("groundPound")) parts.push("C pound");
-    if (c.moves.includes("wallJump")) parts.push("wall jump");
-    if (c.moves.includes("spinAttack")) parts.push("J (air) spin attack");
+    const { slots } = resolveLoadout(c.moves);
+    const parts = ["WASD move", "Space jump"];
+    for (const [slot, spec] of Object.entries(slots) as Array<[SlotKey, NonNullable<(typeof slots)[SlotKey]>]>) {
+      if (!spec) continue;
+      parts.push(`${SLOT_LABELS[slot]} ${spec.label}`);
+    }
     parts.push("Tab to edit");
     this.hintEl.textContent = parts.join(" · ");
   }

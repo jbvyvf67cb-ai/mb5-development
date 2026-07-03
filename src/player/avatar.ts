@@ -34,10 +34,14 @@ export class SpriteAvatar {
     this.yaw += d * Math.min(1, dt * 12);
     this.rig.setYaw(this.yaw);
 
-    // squash & stretch: stretch with upward speed, squash pulse on landing
+    // squash & stretch: stretch with upward speed, squash pulse on landing —
+    // unless the active move dictates its own stretch (slides, balloons).
     if (this.player.justLanded && this.player.landImpact > 5) this.squashT = 0;
     let stretch = 1;
-    if (this.squashT >= 0) {
+    if (this.player.moveStretch !== undefined) {
+      stretch = this.player.moveStretch;
+      this.squashT = -1;
+    } else if (this.squashT >= 0) {
       this.squashT += dt;
       const T = 0.16;
       if (this.squashT >= T) this.squashT = -1;
@@ -50,9 +54,15 @@ export class SpriteAvatar {
     }
 
     this.rig.update(this.player.pose, this.player.runPhase, dt, {
-      flip: this.player.flip,
       stretch,
-      ...(this.player.attack ? { attack: this.player.attack } : {}),
+      ...(this.player.movePose ? { movePose: { pose: this.player.movePose, a: this.player.moveA } } : {}),
+      ...(this.player.spinX !== undefined ? { spinX: this.player.spinX } : {}),
+      ...(this.player.spinY !== undefined ? { spinY: this.player.spinY } : {}),
+      vy: this.player.vy,
+      speed: this.player.hSpeed,
+      airborne: !this.player.grounded,
+      gliding: this.player.gliding,
+      earSpin: this.player.earSpin,
     });
   }
 

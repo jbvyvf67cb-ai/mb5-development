@@ -14,9 +14,10 @@ import {
 } from "../editor/widgets";
 import { buildAssistPanel } from "../ai/panel";
 import {
-  ACCESSORIES, cloneCharacter, deriveMovement, MOVES, normalizeCharacter,
+  ACCESSORIES, cloneCharacter, deriveMovement, normalizeCharacter,
   type Accessory, type BodyStyle, type CharacterData,
 } from "./schema";
+import { equipableMoves, SLOT_LABELS, type MoveSpec, type SlotKey } from "./moves";
 import { CharacterRig, type RigPose } from "./rig";
 import {
   activeCharacterId, allCharacters, deleteCharacter, isPreset, setActiveCharacter, upsertCharacter,
@@ -474,11 +475,48 @@ export class DesignerMode {
     box.appendChild(statNote);
     renderDerived();
 
-    heading("Special moves", box);
-    for (const m of MOVES) {
+    heading("Move loadout", box);
+    hint("One move per trigger slot — every move works on every body. Empty attack/kick slots fall back to the base kit (punch combo / roundhouse / dive kick).", box);
+    // group the catalog by slot
+    const bySlot = new Map<SlotKey, MoveSpec[]>();
+    for (const m of equipableMoves()) {
+      const list = bySlot.get(m.slot) ?? [];
+      list.push(m);
+      bySlot.set(m.slot, list);
+    }
+    const slotOrder: SlotKey[] = [
+      "jumpAir", "fallHold", "dashGround", "dashAir", "wall",
+      "powerAir", "powerGround", "attackGround", "attackAir", "kickGround", "kickAir",
+    ];
+    const descEl = new Map<SlotKey, HTMLElement>();
+    for (const slot of slotOrder) {
+      const list = bySlot.get(slot) ?? [];
+      if (!list.length) continue;
+      const currentKey = c.moves.find((k) => list.some((m) => m.key === k)) ?? "";
+      const sel = selectField(
+        SLOT_LABELS[slot],
+        [{ value: "", label: "— none —" }, ...list.map((m) => ({ value: m.key, label: m.label }))],
+        currentKey,
+        (v) => {
+          this.edit((cc) => {
+            cc.moves = cc.moves.filter((k) => !list.some((m) => m.key === k));
+            if (v) cc.moves.push(v);
+          });
+          const d = descEl.get(slot);
+          if (d) d.textContent = list.find((m) => m.key === v)?.desc ?? "";
+        },
+        box,
+      );
+      void sel;
+      const d = txt("div", list.find((m) => m.key === currentKey)?.desc ?? "", "mb5-hint", box);
+      d.style.marginTop = "-2px";
+      descEl.set(slot, d);
+    }
+    heading("Passives", box);
+    for (const m of equipableMoves().filter((m) => m.slot === "passive")) {
       const wrap = div("", box);
       wrap.style.marginBottom = "6px";
-      checkbox(`${m.label} — ${m.control}`, c.moves.includes(m.key), (on) => {
+      checkbox(m.label, c.moves.includes(m.key), (on) => {
         this.edit((cc) => {
           cc.moves = on ? [...new Set([...cc.moves, m.key])] : cc.moves.filter((k) => k !== m.key);
         });
@@ -487,7 +525,7 @@ export class DesignerMode {
       d.style.marginLeft = "22px";
       d.style.marginTop = "0";
     }
-    hint("Everyone also has the base attacks: J punch combo · K kick · K (air) dive kick. 🧪 Test Drive to feel it all.", box);
+    hint("🧪 Test Drive to feel the whole kit on the stage.", box);
   }
 
   private stopTestUi() {

@@ -8,7 +8,8 @@
 // model can only ever produce things the engine already knows how to apply.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { ACCESSORIES, MOVES, normalizeCharacter, type CharacterData } from "../character/schema";
+import { ACCESSORIES, normalizeCharacter, type CharacterData } from "../character/schema";
+import { equipableMoves, SLOT_LABELS } from "../character/moves";
 import { allPrefabs } from "../world/prefabs";
 import type { ContinentData } from "../world/schema";
 import type { LevelOp } from "./ops";
@@ -89,8 +90,9 @@ const CHARACTER_SCHEMA = {
     },
     moves: {
       type: "array",
-      items: { type: "string", enum: MOVES.map((m) => m.key) },
-      description: "Equipped special moves (2-3 is typical)",
+      items: { type: "string", enum: equipableMoves().map((m) => m.key) },
+      description:
+        "Equipped move loadout: at most one move per trigger slot (extras in a slot are ignored); 4-7 moves plus a passive makes a strong kit.",
     },
   },
 } as const;
@@ -136,8 +138,14 @@ export async function generateCharacter(
       "parameters: a body style (blocky voxel or rounded organic — pick whichever fits the " +
       "fantasy, e.g. robots/golems blocky, animals/blobs rounded), body morphs " +
       "(height/width/weight/head/ears), four colors, an accessory " +
-      `(${ACCESSORIES.map((a) => a.key).join("/")}), stats 1-10, and equipped special moves ` +
-      `(${MOVES.map((m) => `${m.key}: ${m.desc}`).join(" · ")}). ` +
+      `(${ACCESSORIES.map((a) => a.key).join("/")}), stats 1-10, and a move loadout. ` +
+      "Moves are grouped by trigger slot; equip AT MOST ONE per slot (plus passives) to build a " +
+      "kit matching the fantasy — e.g. a heavy bruiser takes meteorSlam + chargeRam + hammerFists, " +
+      "a zippy hero takes doubleJump + glide + airDash + homingStrike. The catalog:\n" +
+      equipableMoves()
+        .map((m) => `- ${m.key} [${SLOT_LABELS[m.slot]}]: ${m.desc}`)
+        .join("\n") +
+      "\n" +
       "The user describes a new character or an adjustment to the CURRENT one; if it reads as an " +
       "adjustment, keep everything they didn't mention. When an image is attached, translate it " +
       "onto these parameters as faithfully as possible: dominant color → fur, secondary → muzzle/" +

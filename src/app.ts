@@ -182,7 +182,7 @@ export class App {
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
       this.camera.alpha += d * Math.min(1, dt * 3.4);
-      this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, 1.4, 0);
+      this.camera.target.copyFrom(this.player.position).addInPlaceFromFloats(0, this.player.mv.capsuleHeight * 0.72, 0);
       this.collideCamera(dt);
       // speed FOV kick (dash/boost rush)
       const fovWant = 0.8 + Math.min(0.18, Math.max(0, this.player.hSpeed - 9) / 55);
@@ -366,15 +366,17 @@ export class App {
     this.player = new PlayerController(this.scene, spawn, ch);
     this.avatar = new SpriteAvatar(this.scene, this.player, ch);
     this.effects = new PlayerEffects(this.scene, this.player);
-    this.player.onPoundLand = (pos) => this.effects?.burstAt(pos, 46);
+    this.player.onShock = (pos) => this.effects?.burstAt(pos, 30);
+    this.player.onBurst = (pos, count) => this.effects?.burstAt(pos, count);
     this.player.onStrike = (pos, dx, dz, opts) => {
       this.effects?.burstAt(pos.add(new Vector3(dx * 1.2, 0.2, dz * 1.2)), 6 + Math.round(opts.power / 3));
     };
     this.input.attach();
     this.hud.setCharacter(ch);
     this.hud.show();
-    this.desiredCamRadius = 13;
-    this.camera.radius = 13;
+    const testScale = Math.min(1.8, Math.max(0.85, this.player.mv.capsuleHeight / 1.9));
+    this.desiredCamRadius = 13 * testScale;
+    this.camera.radius = this.desiredCamRadius;
     this.camera.beta = 1.24;
     this.camera.target.copyFrom(spawn);
   }
@@ -483,21 +485,22 @@ export class App {
     this.input.attach();
     this.session = new PlaySession(this.scene, this.world, this.state, this.player);
     this.effects = new PlayerEffects(this.scene, this.player);
-    this.player.onPoundLand = (pos) => {
-      this.session?.shockwave(pos);
-      this.effects?.burstAt(pos, 46);
-    };
+    this.player.onShock = (pos) => this.session?.shockwave(pos);
+    this.player.onBurst = (pos, count) => this.effects?.burstAt(pos, count);
     this.player.onStrike = (pos, dx, dz, opts) => {
       const hitPos = pos.add(new Vector3(dx * 1.2, 0.2, dz * 1.2));
       const hits = this.session?.applyStrike(pos, dx, dz, opts) ?? 0;
       this.effects?.burstAt(hitPos, 6 + hits * 8);
     };
+    this.player.onQueryTarget = (pos, maxDist) => this.session?.nearestTarget(pos, maxDist) ?? null;
     this.hud.setCharacter(character);
     this.hud.show();
     this.camera.target.copyFrom(this.player.position);
-    // Sonic-style framing: further back and lower than the editor camera.
-    this.desiredCamRadius = 14.5;
-    this.camera.radius = 14.5;
+    // Sonic-style framing: further back and lower; distance scales with the
+    // character (giants get framed wide, runts close).
+    const camScale = Math.min(1.8, Math.max(0.85, this.player.mv.capsuleHeight / 1.9));
+    this.desiredCamRadius = 14.5 * camScale;
+    this.camera.radius = this.desiredCamRadius;
     this.camera.beta = 1.26;
     const player = this.player;
     const w = window as unknown as Record<string, unknown>;

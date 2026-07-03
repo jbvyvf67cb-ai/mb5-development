@@ -6,6 +6,7 @@
 // ContinentData. Joshua the bear is the first built-in.
 
 import type { Vec3 } from "../world/schema";
+import { migrateMoveKeys } from "./moves";
 
 export interface CharacterBody {
   /** Overall vertical scale (0.75..1.35). */
@@ -65,23 +66,8 @@ export interface CharacterStats {
   defense: number;
 }
 
-export type MoveKey = "doubleJump" | "dash" | "glide" | "groundPound" | "wallJump" | "spinAttack";
-
-export interface MoveDef {
-  key: MoveKey;
-  label: string;
-  control: string;
-  desc: string;
-}
-
-export const MOVES: MoveDef[] = [
-  { key: "doubleJump", label: "Double Jump", control: "Space (in air)", desc: "One extra jump while airborne." },
-  { key: "dash", label: "Dash", control: "Shift", desc: "A quick burst forward — crosses gaps. Once per airtime." },
-  { key: "glide", label: "Glide", control: "hold Space (falling)", desc: "Spread out and fall slowly." },
-  { key: "groundPound", label: "Ground Pound", control: "C (in air)", desc: "Slam straight down with a shockwave." },
-  { key: "wallJump", label: "Wall Jump", control: "Space (on a wall)", desc: "Kick off walls while airborne." },
-  { key: "spinAttack", label: "Spin Attack", control: "J (in air)", desc: "A 360° spinning strike that hits everything around you." },
-];
+/** A key into the move catalog (src/character/moves.ts) — one move per trigger slot. */
+export type MoveKey = string;
 
 /**
  * Base combat verbs — every character has these (no equip needed):
@@ -117,7 +103,7 @@ export const JOSHUA: CharacterData = {
   accessory: "bowtie",
   // The mountain that walks: huge, slow, hits like a landslide.
   stats: { speed: 2, jump: 4, attack: 10, defense: 10 },
-  moves: ["groundPound", "spinAttack", "dash"],
+  moves: ["groundPound", "spinAttack", "dash", "warRoar", "hammerFists", "sweepKick", "rollLanding"],
 };
 
 export const PRESETS: CharacterData[] = [
@@ -135,7 +121,7 @@ export const PRESETS: CharacterData[] = [
     },
     accessory: "scarf",
     stats: { speed: 9, jump: 8, attack: 3, defense: 3 },
-    moves: ["doubleJump", "glide", "wallJump"],
+    moves: ["doubleJump", "glide", "wallJump", "airDash", "boostBurst", "homingStrike", "rollLanding", "skidFlash"],
   },
   {
     id: "boulder",
@@ -149,7 +135,7 @@ export const PRESETS: CharacterData[] = [
     },
     accessory: "cap",
     stats: { speed: 3, jump: 4, attack: 9, defense: 9 },
-    moves: ["groundPound", "dash"],
+    moves: ["meteorSlam", "chargeRam", "shockStomp", "shoulderBash", "axeKick", "rollLanding"],
   },
 ];
 
@@ -170,9 +156,8 @@ export function normalizeCharacter(raw: unknown): CharacterData {
   const body = (r.body ?? {}) as Record<string, unknown>;
   const colors = (r.colors ?? {}) as Record<string, unknown>;
   const stats = (r.stats ?? {}) as Record<string, unknown>;
-  const moveKeys = new Set(MOVES.map((m) => m.key));
-  const moves = (Array.isArray(r.moves) ? r.moves : JOSHUA.moves).filter((m): m is MoveKey =>
-    moveKeys.has(m as MoveKey),
+  const moves = migrateMoveKeys(
+    (Array.isArray(r.moves) ? r.moves : JOSHUA.moves).filter((m): m is string => typeof m === "string"),
   );
   const acc: Accessory = ACCESSORIES.some((a) => a.key === r.accessory)
     ? (r.accessory as Accessory)
@@ -237,9 +222,11 @@ export function deriveMovement(c: CharacterData): DerivedMovement {
     doubleJumpVelocity: jumpVelocity * 0.92,
     groundAccel: 85 * (1 - heavy * 0.25),
     airAccel: 30 * (1 - heavy * 0.2),
-    mass: 45 + heavy * 55,
+    mass: 40 + heavy * 45 + c.body.height * 25, // giants are heavy
     dashSpeed: runSpeed * 2.2,
-    capsuleHeight: 1.35 + 0.55 * c.body.height, // 1.76 .. 2.09-ish
-    capsuleRadius: 0.34 + 0.14 * c.body.width * (1 + heavy * 0.25),
+    // Aggressive size mapping so scale is FELT: height 0.85 → 1.55 m,
+    // 1.0 → 1.88 m, 1.6 → 3.2 m — a giant genuinely towers.
+    capsuleHeight: Math.max(1.25, 2.2 * c.body.height - 0.32),
+    capsuleRadius: (0.18 + 0.26 * c.body.width) * (1 + heavy * 0.25),
   };
 }

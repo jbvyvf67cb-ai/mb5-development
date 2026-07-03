@@ -145,6 +145,32 @@ export class PlaySession {
     return hits;
   }
 
+  /** Nearest homing-strike target (live enemy or punchable prop) within maxDist. */
+  nearestTarget(pos: Vector3, maxDist: number): Vector3 | null {
+    let best: Vector3 | null = null;
+    let bestD = maxDist * maxDist;
+    for (const e of this.enemies) {
+      if (this.downedEnemies.includes(e.id)) continue;
+      const mesh = this.world.entityMeshes.get(e.id);
+      if (!mesh || !mesh.isEnabled()) continue;
+      const d = Vector3.DistanceSquared(pos, mesh.position);
+      if (d < bestD) {
+        bestD = d;
+        best = mesh.position.clone();
+      }
+    }
+    for (const id of this.dynamicProps) {
+      const mesh = this.world.prefabMeshes.get(id);
+      if (!mesh) continue;
+      const d = Vector3.DistanceSquared(pos, mesh.position);
+      if (d < bestD) {
+        bestD = d;
+        best = mesh.position.clone();
+      }
+    }
+    return best;
+  }
+
   /** Ground-pound impact: an expanding, fading ring. */
   shockwave(pos: Vector3) {
     const ring = MeshBuilder.CreateTorus(
