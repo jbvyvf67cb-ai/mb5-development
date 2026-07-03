@@ -43,6 +43,8 @@ export interface EditorHost {
   clearReference(): void;
   openDesigner(): void;
   applyAiOps(ops: LevelOp[]): Promise<string[]>;
+  /** Toggle the top-down orthographic geography view; returns the new state. */
+  toggleTopView(): boolean;
 }
 
 const ENTITY_TYPES: Array<{ key: string; label: string; color: string }> = [
@@ -58,7 +60,7 @@ const TOOLS: Array<{ key: Tool; icon: string; label: string; hintText: string }>
   { key: "entity", icon: "◈", label: "Entity (4)", hintText: "click to drop the chosen gameplay marker" },
 ];
 const GIZMOS: GizmoMode[] = ["move", "rotate", "scale"];
-const BRUSHES: BrushMode[] = ["raise", "lower", "smooth", "flatten"];
+const BRUSHES: BrushMode[] = ["raise", "lower", "smooth", "flatten", "land", "water", "stream"];
 const COLLIDERS: ColliderKind[] = ["auto", "box", "sphere", "capsule", "cylinder", "mesh", "none"];
 
 const ENV_PRESETS: Record<string, Partial<EnvSettings>> = {
@@ -191,8 +193,19 @@ export class EditorUI {
     const cam = btn("⌂", () => (window as unknown as { __reframe?: () => void }).__reframe?.(), "icon ghost", rail);
     cam.title = "Frame level (reset camera)";
     cam.classList.add("mb5-icon");
+    this.topBtn = btn("⬒", () => this.setTopView(this.host.toggleTopView()), "icon ghost", rail);
+    this.topBtn.title = "Top view (T) — orthographic map view for painting land, water, and streams";
+    this.topBtn.classList.add("mb5-icon");
     document.body.appendChild(rail);
     this.chrome.push(rail);
+  }
+
+  private topBtn!: HTMLButtonElement;
+
+  /** Reflect the top-view state on the rail button (App calls this too). */
+  setTopView(on: boolean) {
+    this.topBtn?.classList.toggle("active", on);
+    if (on) this.setStatusHint("Top view — paint with Sculpt's Land/Water/Stream brushes · wheel zooms · right-drag pans · T to exit");
   }
 
   private buildToolPanels() {
@@ -270,6 +283,13 @@ export class EditorUI {
     slider("Radius", 2, 40, 1, ed.brush.radius, (v) => (ed.brush.radius = v), sc);
     slider("Strength", 0.1, 3, 0.1, ed.brush.strength, (v) => (ed.brush.strength = v), sc);
     hint("Flatten levels toward the height you first clicked. Physics rebuilds when you release.", sc);
+    heading("Geography", sc);
+    slider("Land height", 1, 14, 0.5, ed.brush.landHeight, (v) => (ed.brush.landHeight = v), sc);
+    slider("Water depth", 0.5, 8, 0.5, ed.brush.waterDepth, (v) => (ed.brush.waterDepth = v), sc);
+    hint(
+      "Land / Water / Stream reshape coastlines relative to sea level: Land grows islands (never crushes peaks), Water digs ocean and lakes, Stream carves narrow channels (use a small radius). Best from the top view (T). Painting water turns the ocean on if the level has none. For lava lakes and ponds at altitude, place the Lava pool / Water pool prefabs and scale them.",
+      sc,
+    );
     this.toolPanels.sculpt = sc;
 
     // --- entity panel

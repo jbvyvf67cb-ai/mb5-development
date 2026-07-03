@@ -27,7 +27,7 @@ import {
 
 export type Tool = "select" | "place" | "sculpt" | "entity";
 export type GizmoMode = "move" | "rotate" | "scale";
-export type BrushMode = "raise" | "lower" | "smooth" | "flatten";
+export type BrushMode = "raise" | "lower" | "smooth" | "flatten" | "land" | "water" | "stream";
 
 export interface Selection {
   kind: "prefab" | "entity";
@@ -47,7 +47,9 @@ export class Editor {
   gizmoMode: GizmoMode = "move";
   placePrefab = "platform";
   entityType = "coin";
-  brush = { radius: 10, strength: 0.5, mode: "raise" as BrushMode };
+  // landHeight/waterDepth are meters relative to sea level — the geography
+  // brushes (land/water/stream) paint coastlines toward those targets.
+  brush = { radius: 10, strength: 0.5, mode: "raise" as BrushMode, landHeight: 5, waterDepth: 3 };
   snap = { enabled: false, pos: 1, rotDeg: 15, scale: 0.25 };
   history = new History();
 
@@ -357,6 +359,16 @@ export class Editor {
     const s = this.brush.strength;
     const h = td.heights;
 
+    // Geography brushes paint relative to the waterline. Painting water on a
+    // level with no ocean quietly turns the ocean on (otherwise nothing would
+    // visibly change).
+    const geo = this.brush.mode === "land" || this.brush.mode === "water" || this.brush.mode === "stream";
+    if (geo && this.world.data.meta.seaLevel === undefined) this.world.setSeaLevel(0.3);
+    const sea = this.world.data.meta.seaLevel ?? 0;
+    const landTarget = sea + this.brush.landHeight;
+    const waterTarget = sea - this.brush.waterDepth;
+    const streamTarget = sea - Math.min(1.6, this.brush.waterDepth);
+
     const cMin = Math.max(0, Math.floor((hit.x - R - origin[0]) / cellX));
     const cMax = Math.min(cols - 1, Math.ceil((hit.x + R - origin[0]) / cellX));
     const rMin = Math.max(0, Math.floor((hit.z - R - origin[1]) / cellZ));
@@ -391,6 +403,17 @@ export class Editor {
             h[idx] += (n - h[idx]) * f * 0.5;
             break;
           }
+          // Geography: LAND only lifts (grow an island without crushing its
+          // mountains), WATER/STREAM only sink (carve sea, lakes, channels).
+          case "land":
+            if (h[idx] < landTarget) h[idx] += (landTarget - h[idx]) * f * 0.55;
+            break;
+          case "water":
+            if (h[idx] > waterTarget) h[idx] += (waterTarget - h[idx]) * f * 0.55;
+            break;
+          case "stream":
+            if (h[idx] > streamTarget) h[idx] += (streamTarget - h[idx]) * f * 0.6;
+            break;
         }
       }
     }

@@ -24,6 +24,8 @@ export interface PrefabDef {
   defaultScale: Vec3;
   /** Emissive strength 0..1 (glowing props like crystals/rings). */
   glow?: number;
+  /** Material transparency (water pools); omitted = opaque. */
+  alpha?: number;
   /** Build a fresh unit-sized mesh (no material/transform applied yet). */
   build: (scene: Scene, name: string) => Mesh;
 }
@@ -409,6 +411,37 @@ const DEFS: Record<string, PrefabDef> = {
     glow: 0.2,
     defaultScale: [1.5, 4, 1.5],
     build: buildGoal,
+  },
+  // Liquids: flat slabs with no collider — you sink in. Scale them from the
+  // top view to fit a carved basin. Lava is a hazard (respawn on touch, like
+  // spikes); pools are calm water at ANY height (mountain lakes the global
+  // sea plane can't reach).
+  lava: {
+    key: "lava",
+    label: "Lava pool",
+    category: "gameplay",
+    collider: "none",
+    baseColor: [1, 0.42, 0.1],
+    glow: 0.85,
+    defaultScale: [10, 0.5, 10],
+    build: (scene, name) => {
+      const m = MeshBuilder.CreateBox(name, { size: 1 }, scene);
+      return m;
+    },
+  },
+  pool: {
+    key: "pool",
+    label: "Water pool",
+    category: "nature",
+    collider: "none",
+    baseColor: [0.16, 0.42, 0.6],
+    glow: 0.14,
+    alpha: 0.72,
+    defaultScale: [10, 0.5, 10],
+    build: (scene, name) => {
+      const m = MeshBuilder.CreateBox(name, { size: 1 }, scene);
+      return m;
+    },
   },
 };
 

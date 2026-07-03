@@ -42,8 +42,19 @@ contextual panel, right **Inspector | Level | Style** tabs, status bar
   candy), collider, and gameplay props (platform path/speed, spring/boost
   power).
 - **Sculpt** — raise / lower / smooth / flatten with a brush-radius ring
-  preview.
+  preview, plus **geography brushes**: **Land** grows islands (raises toward
+  a plateau height without crushing peaks), **Water** digs ocean and lakes
+  below sea level, **Stream** carves narrow channels — painting water on a
+  dry level turns the ocean on automatically.
 - **Entity** — gameplay markers (spawn, coin, checkpoint, enemy).
+
+**Top view (`T` or the ⬒ rail button)** — an orthographic straight-down view
+framing the whole map like the drawing it came from. This is the geography
+vantage: resize landmasses and bodies of water by painting coastlines with
+the Land/Water/Stream brushes, drag streams between lakes, and place/scale
+**Lava pool** / **Water pool** prefabs (liquid slabs that work at any height
+— lava burns and respawns the player, pools are calm water for mountain
+lakes). Wheel zooms, right-drag pans; `T` again returns to the 3D view.
 
 **Level tab**: name, kill-plane, **physics** (gravity + per-level run/jump/air
 multipliers — moon levels, speed stages), **sea level (ocean plane)**, terrain

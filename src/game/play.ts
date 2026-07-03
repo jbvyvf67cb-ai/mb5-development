@@ -43,6 +43,7 @@ export class PlaySession {
   private springs: Pad[] = [];
   private boosts: Pad[] = [];
   private spikes: Pad[] = [];
+  private lavas: Pad[] = [];
   private goals: Pad[] = [];
   private movers: Mover[] = [];
   private won = false;
@@ -79,6 +80,7 @@ export class PlaySession {
       if (inst.prefab === "spring") this.springs.push(pad);
       else if (inst.prefab === "boost") this.boosts.push(pad);
       else if (inst.prefab === "spikes") this.spikes.push(pad);
+      else if (inst.prefab === "lava") this.lavas.push(pad);
       else if (inst.prefab === "goal") this.goals.push(pad);
       else if (inst.prefab === "movingPlatform") {
         const p = inst.props ?? {};
@@ -268,6 +270,14 @@ export class PlaySession {
     }
     for (const s of this.spikes) {
       if (onPad(s, 0.2, 0.4, 0.9)) {
+        this.player.teleport(this.respawn);
+        break;
+      }
+    }
+    // lava: sinking anywhere into the slab burns (no collider — you fall in)
+    for (const l of this.lavas) {
+      if (onPad(l, 0.1, l.mesh.scaling.y + 0.6, 0.25)) {
+        this.shockwave(new Vector3(p.x, l.mesh.position.y + l.mesh.scaling.y / 2, p.z));
         this.player.teleport(this.respawn);
         break;
       }

@@ -309,7 +309,9 @@ export async function generateLevelOps(prompt: string, data: ContinentData): Pro
       `Available prefabs: ${prefabDocs}. Entities: playerSpawn, coin, checkpoint, enemy. ` +
       "Gameplay prefabs: spring (launches up; props.power), boost (speeds along its facing — " +
       "aim with rot[1]; props.power), spikes (hazard, respawns), movingPlatform (props: axis " +
-      "x|y|z, dist m, speed m/s), goal (level finish). Skins restyle a prefab's material " +
+      "x|y|z, dist m, speed m/s), goal (level finish), lava (glowing hazard liquid slab — " +
+      "touching it respawns the player; scale XZ to fill a basin), pool (calm translucent " +
+      "water slab for ponds/lakes at any height). Skins restyle a prefab's material " +
       "(brick/planks/stone/checker/metal/grass/candy). " +
       "Rules: for anything that should sit ON the ground, use pos y=null (the editor snaps it " +
       "to the surface). Scale is in meters (a tree is ~4x7x4). Place content INSIDE the level " +
@@ -343,7 +345,8 @@ export async function generateMapPlan(image: PromptImage, notes: string): Promis
   const { MAP_PLAN_SCHEMA } = await import("./mapplan");
   const gameplayPrefabs =
     "spring (launch pad), boost (speed pad), spikes (hazard), movingPlatform, goal (level finish), " +
-    "ring (collect arch), crystal (glowing), ball/crate (physical props)";
+    "ring (collect arch), crystal (glowing), ball/crate (physical props), lava (hazard liquid slab — " +
+    "use for drawn lava/volcano pools, scaled to fit), pool (calm water slab — ponds/lakes at altitude)";
   const response = await client().messages.create({
     model: MODEL,
     max_tokens: 24000,

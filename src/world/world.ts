@@ -186,14 +186,15 @@ export class World implements ContinentResult {
 
   // --- materials ---
 
-  private material(rgb: Vec3, glow = 0): StandardMaterial {
-    const key = rgb.map((n) => n.toFixed(3)).join("_") + `_g${glow.toFixed(2)}`;
+  private material(rgb: Vec3, glow = 0, alpha = 1): StandardMaterial {
+    const key = rgb.map((n) => n.toFixed(3)).join("_") + `_g${glow.toFixed(2)}_a${alpha.toFixed(2)}`;
     let m = this.matCache.get(key);
     if (!m) {
       m = new StandardMaterial(`mat:${key}`, this.scene);
       m.diffuseColor = new Color3(rgb[0], rgb[1], rgb[2]);
       m.specularColor = new Color3(0.04, 0.04, 0.04);
       if (glow > 0) m.emissiveColor = new Color3(rgb[0] * glow, rgb[1] * glow, rgb[2] * glow);
+      if (alpha < 1) m.alpha = alpha;
       this.matCache.set(key, m);
     }
     return m;
@@ -363,7 +364,7 @@ export class World implements ContinentResult {
     mesh.material =
       inst.skin && inst.skin !== "default"
         ? skinMaterial(this.scene, inst.skin as SkinKey, rgb, glow)
-        : this.material(rgb, glow);
+        : this.material(rgb, glow, def?.alpha ?? 1);
   }
 
   /** Recolor a prefab (tint multiplies its base color; skins re-derive too). */

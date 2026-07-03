@@ -4,7 +4,7 @@
 // around the level with a follow camera and kill-plane respawn. Tab toggles.
 
 import type { ArcRotateCamera, Mesh, Scene, StandardMaterial, Texture } from "@babylonjs/core";
-import { Color3, MeshBuilder, Ray, StandardMaterial as StdMat, Texture as Tex, Vector3 } from "@babylonjs/core";
+import { Camera, Color3, MeshBuilder, Ray, StandardMaterial as StdMat, Texture as Tex, Vector3 } from "@babylonjs/core";
 import type { GameState } from "./game/state";
 import type { ContinentData } from "./world/schema";
 import { DEFAULT_PALETTE } from "./world/schema";
@@ -48,6 +48,14 @@ export class App {
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private lockWatcher: LockWatcher;
   private remoteLocked = false;
+  // Top view (orthographic, straight down) — the geography-editing vantage.
+  private topSaved?: {
+    alpha: number; beta: number; radius: number; target: Vector3;
+    lowerBeta: number | null; upperBeta: number | null;
+    lowerAlpha: number | null; upperAlpha: number | null;
+  };
+  private topBaseRadius = 1;
+  private topBaseHalfH = 1;
   private historyChanged = () => {
     this.ui.updateHistory();
     this.scheduleSave();
@@ -103,6 +111,7 @@ export class App {
       clearReference: () => self.clearReference(),
       openDesigner: () => self.openDesigner(),
       applyAiOps: (ops) => self.applyAiOps(ops),
+      toggleTopView: () => self.toggleTopView(),
     });
     this.hud = new Hud(state);
     this.editor.onSelectionChange = (sel) => this.ui.showSelection(sel);
@@ -138,6 +147,72 @@ export class App {
   private makeEditor(): Editor {
     const ed = new Editor(this.scene, this.world, this.camera);
     return ed;
+  }
+
+  get isTopView(): boolean {
+    return !!this.topSaved;
+  }
+
+  /**
+   * Toggle the top-down geography view: orthographic, straight down, whole
+   * map framed — the vantage for painting coastlines, lakes, and streams
+   * with the Land/Water/Stream brushes (and resizing liquid pools).
+   */
+  toggleTopView(): boolean {
+    if (this.mode !== "edit") return false;
+    const cam = this.camera;
+    if (!this.topSaved) {
+      this.topSaved = {
+        alpha: cam.alpha, beta: cam.beta, radius: cam.radius, target: cam.target.clone(),
+        lowerBeta: cam.lowerBetaLimit, upperBeta: cam.upperBetaLimit,
+        lowerAlpha: cam.lowerAlphaLimit, upperAlpha: cam.upperAlphaLimit,
+      };
+      const b = this.world.data.meta.bounds;
+      cam.setTarget(new Vector3((b.min[0] + b.max[0]) / 2, 0, (b.min[2] + b.max[2]) / 2));
+      cam.alpha = -Math.PI / 2;
+      cam.beta = 0.02; // straight down (0 exactly gimbal-locks the orbit math)
+      cam.lowerBetaLimit = 0.02;
+      cam.upperBetaLimit = 0.02;
+      cam.lowerAlphaLimit = -Math.PI / 2;
+      cam.upperAlphaLimit = -Math.PI / 2;
+      cam.mode = Camera.ORTHOGRAPHIC_CAMERA;
+      // frame the whole map with margin; wheel still changes radius, and the
+      // per-frame sync below maps radius → ortho extents so zoom keeps working
+      const ex = Math.max(20, (b.max[0] - b.min[0]) / 2 + 12);
+      const ez = Math.max(20, (b.max[2] - b.min[2]) / 2 + 12);
+      const engine = this.scene.getEngine();
+      const aspect = engine.getRenderWidth() / Math.max(1, engine.getRenderHeight());
+      this.topBaseHalfH = Math.max(ez, ex / aspect);
+      this.topBaseRadius = Math.max(this.topBaseHalfH * 1.6, 80);
+      cam.radius = this.topBaseRadius;
+      this.syncTopOrtho();
+      return true;
+    }
+    const s = this.topSaved;
+    this.topSaved = undefined;
+    cam.mode = Camera.PERSPECTIVE_CAMERA;
+    cam.orthoLeft = cam.orthoRight = cam.orthoTop = cam.orthoBottom = null;
+    cam.lowerBetaLimit = s.lowerBeta;
+    cam.upperBetaLimit = s.upperBeta;
+    cam.lowerAlphaLimit = s.lowerAlpha;
+    cam.upperAlphaLimit = s.upperAlpha;
+    cam.alpha = s.alpha;
+    cam.beta = s.beta;
+    cam.radius = s.radius;
+    cam.setTarget(s.target);
+    return false;
+  }
+
+  /** Map wheel-zoomed radius onto the ortho window (and track resizes). */
+  private syncTopOrtho() {
+    const cam = this.camera;
+    const engine = this.scene.getEngine();
+    const aspect = engine.getRenderWidth() / Math.max(1, engine.getRenderHeight());
+    const halfH = this.topBaseHalfH * (cam.radius / this.topBaseRadius);
+    cam.orthoTop = halfH;
+    cam.orthoBottom = -halfH;
+    cam.orthoLeft = -halfH * aspect;
+    cam.orthoRight = halfH * aspect;
   }
 
   /** The remote lock flipped: park the app in (frozen) edit mode + overlay. */
@@ -190,6 +265,7 @@ export class App {
       case "Digit2": this.ui.setTool("place"); break;
       case "Digit3": this.ui.setTool("sculpt"); break;
       case "Digit4": this.ui.setTool("entity"); break;
+      case "KeyT": this.ui.setTopView(this.toggleTopView()); break;
       case "KeyQ": ed.setGizmoMode("move"); break;
       case "KeyW": ed.setGizmoMode("rotate"); break;
       case "KeyE": ed.setGizmoMode("scale"); break;
@@ -203,6 +279,7 @@ export class App {
 
   private update() {
     const dt = Math.min(this.scene.getEngine().getDeltaTime() / 1000, 0.1);
+    if (this.topSaved && this.mode === "edit") this.syncTopOrtho();
     if ((this.mode === "play" || this.mode === "designtest") && this.player) {
       this.input.poll();
       const camYaw = -this.camera.alpha - Math.PI / 2;
@@ -343,6 +420,7 @@ export class App {
   private async enterDesign() {
     if (this.mode === "play") this.exitPlay();
     if (this.mode !== "edit") return;
+    if (this.topSaved) this.ui.setTopView(this.toggleTopView()); // designer stage is perspective
     this.mode = "design";
     (document.activeElement as HTMLElement | null)?.blur?.();
     this.editor.disable();
@@ -500,6 +578,7 @@ export class App {
   }
 
   private enterPlay() {
+    if (this.topSaved) this.ui.setTopView(this.toggleTopView()); // play is perspective
     this.mode = "play";
     // Nothing may keep keyboard focus into play mode (Space/Enter would
     // re-trigger the focused control).
@@ -570,6 +649,7 @@ export class App {
   loadContinent(raw: ContinentData) {
     const data = normalizeContinent(raw);
     if (this.mode === "play") this.exitPlay();
+    if (this.topSaved) this.ui.setTopView(this.toggleTopView()); // re-frame fresh for the new map
     this.editor.disable();
     this.world.dispose();
     this.world = buildContinent(this.scene, data);
