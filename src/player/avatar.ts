@@ -52,6 +52,7 @@ export class SpriteAvatar {
     this.rig.update(this.player.pose, this.player.runPhase, dt, {
       flip: this.player.flip,
       stretch,
+      ...(this.player.attack ? { attack: this.player.attack } : {}),
     });
   }
 

@@ -32,6 +32,25 @@ const STRIDE = 2.1; // meters of travel per full run cycle (keeps feet planted)
 
 export type AvatarPose = "idle" | "run" | "jump" | "fall" | "dash" | "pound" | "glide";
 
+export type AttackKind = "punch1" | "punch2" | "punch3" | "kick" | "airkick" | "spin";
+
+/** Per-attack tuning: duration, moment of impact, hit shape, knockback scale. */
+const ATTACKS: Record<AttackKind, { dur: number; strikeAt: number; radius: number; arc: number; mult: number }> = {
+  punch1: { dur: 0.26, strikeAt: 0.45, radius: 2.3, arc: 0.35, mult: 1 },
+  punch2: { dur: 0.26, strikeAt: 0.45, radius: 2.3, arc: 0.35, mult: 1.1 },
+  punch3: { dur: 0.4, strikeAt: 0.5, radius: 2.6, arc: 0.2, mult: 1.6 }, // combo finisher
+  kick: { dur: 0.38, strikeAt: 0.5, radius: 2.7, arc: 0.3, mult: 1.35 },
+  airkick: { dur: 0.45, strikeAt: 0.35, radius: 2.5, arc: 0.25, mult: 1.45 },
+  spin: { dur: 0.55, strikeAt: 0.45, radius: 3.1, arc: -1, mult: 1.2 }, // hits all around
+};
+
+export interface StrikeOpts {
+  power: number;
+  radius: number;
+  /** Min dot(strike dir, target dir); -1 = 360°. */
+  arc: number;
+}
+
 export class PlayerController {
   capsule: ReturnType<typeof MeshBuilder.CreateCapsule>;
   aggregate: PhysicsAggregate;
@@ -58,6 +77,10 @@ export class PlayerController {
   }
   /** Fired when a ground pound lands (position = feet). */
   onPoundLand?: (pos: Vector3) => void;
+  /** Fired at an attack's impact moment (dir = facing at the strike). */
+  onStrike?: (pos: Vector3, dirX: number, dirZ: number, opts: StrikeOpts) => void;
+  /** Current attack animation for the rig (null = none). */
+  attack: { kind: AttackKind; t: number } | null = null;
 
   readonly mv: ReturnType<typeof deriveMovement>;
   private has: Set<MoveKey>;
@@ -74,10 +97,17 @@ export class PlayerController {
   private poundState: "none" | "windup" | "slam" = "none";
   private windupT = 0;
   private flipT = -1; // <0 = no somersault active
+  private atkT = 0; // seconds into the current attack
+  private struck = false; // impact already emitted for this attack
   private jumpRising = false; // current ascent came from a player jump (gates jump-cut/boost)
   private prevGrounded = true;
   private down = new Vector3(0, -1, 0);
-  private ray = new Ray(Vector3.Zero(), this.down, 1);
+  // Ray captures the direction Vector3 BY REFERENCE — the wall probe and the
+  // ground probe must never share one (Scout's wall-jump check once rotated
+  // `down` sideways permanently, freezing him in the fall pose after any
+  // mid-air jump press). Separate rays, each with its own direction instance.
+  private ray = new Ray(Vector3.Zero(), new Vector3(0, -1, 0), 1);
+  private wallRay = new Ray(Vector3.Zero(), new Vector3(1, 0, 0), 1);
 
   constructor(
     private scene: Scene,
@@ -158,6 +188,7 @@ export class PlayerController {
     this.poundState = "none";
     this.flipT = -1;
     this.dashTime = 0;
+    this.attack = null;
     this.jumpRising = false;
     this.prevGrounded = true; // don't fire a phantom landing at the respawn point
     this.vy = 0;
@@ -172,7 +203,12 @@ export class PlayerController {
 
   private checkGround(): boolean {
     const p = this.capsule.position;
-    const reach = this.mv.capsuleHeight / 2 + 0.35;
+    // Margin must cover steep slopes: resting on an incline, the capsule's
+    // contact is on the side of its bottom sphere, so the surface directly
+    // below the center is up to r/cos(θ) away (~+0.5 m at 60°). A 0.35 margin
+    // left players "standing in mid-air" on steep beaches — frozen in the
+    // fall pose with no jumps.
+    const reach = this.mv.capsuleHeight / 2 + 0.35 + this.mv.capsuleRadius * 0.55;
     const offs = this.mv.capsuleRadius * 0.7;
     const pts: Array<[number, number]> = [
       [0, 0],
@@ -196,10 +232,10 @@ export class PlayerController {
     const p = this.capsule.position;
     const reach = this.mv.capsuleRadius + 0.22;
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      this.ray.origin.set(p.x, p.y, p.z);
-      this.ray.direction.set(dx, 0, dz);
-      this.ray.length = reach;
-      const hit = this.scene.pickWithRay(this.ray, (m: AbstractMesh) => m !== this.capsule && m.isPickable);
+      this.wallRay.origin.set(p.x, p.y, p.z);
+      this.wallRay.direction.set(dx, 0, dz);
+      this.wallRay.length = reach;
+      const hit = this.scene.pickWithRay(this.wallRay, (m: AbstractMesh) => m !== this.capsule && m.isPickable);
       if (hit?.hit) {
         const n = hit.getNormal(true);
         if (n && Math.hypot(n.x, n.z) > 0.4) return { nx: n.x, nz: n.z };
@@ -249,6 +285,41 @@ export class PlayerController {
     if (this.flipT >= 0) {
       this.flipT += dt;
       if (this.flipT >= FLIP_DURATION) this.flipT = -1;
+    }
+
+    // --- attacks: punch combo / kick / dive kick / spin ---
+    if (this.attack) {
+      const spec = ATTACKS[this.attack.kind];
+      this.atkT += dt;
+      this.attack.t = Math.min(1, this.atkT / spec.dur);
+      if (!this.struck && this.attack.t >= spec.strikeAt) {
+        this.struck = true;
+        const fx = Math.sin(this.facing);
+        const fz = Math.cos(this.facing);
+        this.onStrike?.(this.position.clone(), fx, fz, {
+          power: this.mv.strikePower * spec.mult,
+          radius: spec.radius,
+          arc: spec.arc,
+        });
+      }
+      if (this.attack.t >= 1) this.attack = null;
+    }
+    const startAttack = (kind: AttackKind) => {
+      this.attack = { kind, t: 0 };
+      this.atkT = 0;
+      this.struck = false;
+    };
+    if (input.attackPressed && this.poundState === "none" && this.dashTime <= 0) {
+      if (!this.grounded && this.has.has("spinAttack") && !this.attack) {
+        startAttack("spin");
+      } else if (this.grounded) {
+        if (!this.attack) startAttack("punch1");
+        else if (this.attack.kind === "punch1" && this.attack.t > 0.4) startAttack("punch2");
+        else if (this.attack.kind === "punch2" && this.attack.t > 0.4) startAttack("punch3");
+      }
+    }
+    if (input.kickPressed && this.poundState === "none" && this.dashTime <= 0 && !this.attack) {
+      startAttack(this.grounded ? "kick" : "airkick");
     }
 
     // --- ground pound: windup flip, then slam ---
@@ -317,13 +388,22 @@ export class PlayerController {
       vy = POUND_SPEED;
     } else {
       // Snappy steering: full accel toward the stick; harder decel when idle
-      // or reversing (kills the ice-skater feel).
+      // or reversing (kills the ice-skater feel). Grounded attacks plant the
+      // feet (damped steering); a dive kick carries committed momentum.
       const base = this.grounded ? this.mv.groundAccel : this.mv.airAccel;
       const reversing = vel.x * targetX + vel.z * targetZ < -0.1;
-      const factor = mag < 0.1 ? 1.7 : reversing ? 1.5 : 1;
+      const attacking = this.attack !== null;
+      const factor = (mag < 0.1 ? 1.7 : reversing ? 1.5 : 1) * (attacking && this.grounded ? 0.35 : 1);
       const accel = base * factor * dt;
-      vx = vel.x + clamp(targetX - vel.x, -accel, accel);
-      vz = vel.z + clamp(targetZ - vel.z, -accel, accel);
+      if (this.attack?.kind === "airkick" && this.attack.t < 0.6) {
+        // flying kick: surge along facing, shallow dive
+        vx = Math.sin(this.facing) * this.mv.runSpeed * 1.35;
+        vz = Math.cos(this.facing) * this.mv.runSpeed * 1.35;
+        if (vy > -2) vy = -2;
+      } else {
+        vx = vel.x + clamp(targetX - vel.x, -accel, accel);
+        vz = vel.z + clamp(targetZ - vel.z, -accel, accel);
+      }
 
       if (this.buffer > 0 && this.coyote > 0) {
         vy = this.mv.jumpVelocity;
@@ -359,7 +439,7 @@ export class PlayerController {
         // asymmetric arc: heavy on the way down; releasing jump cuts the rise —
         // but only for rises the player jumped into (springs keep full height)
         if (vy < 0) {
-          vy += FALL_GRAVITY_EXTRA * dt;
+          vy = Math.max(-32, vy + FALL_GRAVITY_EXTRA * dt); // terminal velocity: no tunneling
           this.jumpRising = false;
         } else if (!input.jumpHeld && this.jumpRising) {
           vy += JUMPCUT_GRAVITY_EXTRA * dt;

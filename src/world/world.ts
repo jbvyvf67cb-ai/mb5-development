@@ -398,6 +398,36 @@ export class World implements ContinentResult {
     if (agg) agg.body.disablePreStep = !on;
   }
 
+  /** Make a prefab a dynamic body for the current run (punchable props). */
+  setPrefabDynamic(id: string, mass: number) {
+    const mesh = this.prefabMeshes.get(id);
+    const inst = this.getPrefabInstance(id);
+    if (!mesh || !inst) return;
+    this.aggregates.get(id)?.dispose();
+    const def = getPrefab(inst.prefab);
+    const kind = !inst.collider || inst.collider === "auto" ? def?.collider ?? "box" : inst.collider;
+    const shape = SHAPE[kind] ?? PhysicsShapeType.BOX;
+    if (shape === null) return;
+    const agg = new PhysicsAggregate(mesh, shape === PhysicsShapeType.MESH ? PhysicsShapeType.BOX : shape, { mass, friction: 0.55, restitution: 0.35 }, this.scene);
+    this.aggregates.set(id, agg);
+  }
+
+  /** Body handle for impulses (dynamic props). */
+  prefabBody(id: string) {
+    return this.aggregates.get(id)?.body;
+  }
+
+  /** Restore a prefab to its authored transform + static collider (run end). */
+  resetPrefabBody(id: string) {
+    const mesh = this.prefabMeshes.get(id);
+    const inst = this.getPrefabInstance(id);
+    if (!mesh || !inst) return;
+    mesh.position.set(inst.pos[0], inst.pos[1], inst.pos[2]);
+    mesh.rotationQuaternion = null;
+    mesh.rotation.set(inst.rot[0], inst.rot[1], inst.rot[2]);
+    this.rebuildCollider(id);
+  }
+
   /** Change a prefab's collider kind. */
   setPrefabCollider(id: string, kind: ColliderKind) {
     const inst = this.getPrefabInstance(id);

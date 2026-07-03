@@ -48,12 +48,13 @@ export class Hud {
   /** Show who's playing and the controls their move set unlocks. */
   setCharacter(c: CharacterData) {
     this.nameEl.textContent = c.name;
-    const parts = ["WASD move", "Space jump"];
+    const parts = ["WASD move", "Space jump", "J punch", "K kick"];
     if (c.moves.includes("doubleJump")) parts.push("Space ×2 double jump");
     if (c.moves.includes("glide")) parts.push("hold Space glide");
     if (c.moves.includes("dash")) parts.push("Shift dash");
     if (c.moves.includes("groundPound")) parts.push("C pound");
     if (c.moves.includes("wallJump")) parts.push("wall jump");
+    if (c.moves.includes("spinAttack")) parts.push("J (air) spin attack");
     parts.push("Tab to edit");
     this.hintEl.textContent = parts.join(" · ");
   }

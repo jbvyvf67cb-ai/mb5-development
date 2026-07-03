@@ -430,8 +430,8 @@ export class DesignerMode {
       box,
     );
     const b = c.body;
-    slider("Height", 0.75, 1.35, 0.01, b.height, (v) => this.edit((cc) => (cc.body.height = v)), box);
-    slider("Width", 0.75, 1.35, 0.01, b.width, (v) => this.edit((cc) => (cc.body.width = v)), box);
+    slider("Height", 0.75, 1.6, 0.01, b.height, (v) => this.edit((cc) => (cc.body.height = v)), box);
+    slider("Width", 0.75, 1.6, 0.01, b.width, (v) => this.edit((cc) => (cc.body.width = v)), box);
     slider("Weight", 0, 1, 0.01, b.weight, (v) => this.edit((cc) => (cc.body.weight = v)), box);
     slider("Head size", 0.8, 1.3, 0.01, b.head, (v) => this.edit((cc) => (cc.body.head = v)), box);
     slider("Ears", 0.4, 1.8, 0.01, b.ears, (v) => this.edit((cc) => (cc.body.ears = v)), box);
@@ -457,7 +457,7 @@ export class DesignerMode {
       statNote.textContent = "";
       hint(
         `run ${d.runSpeed.toFixed(1)} m/s · jump ${d.jumpVelocity.toFixed(1)} m/s · ` +
-          `dash ${d.dashSpeed.toFixed(1)} m/s · mass ${Math.round(d.mass)} kg`,
+          `dash ${d.dashSpeed.toFixed(1)} m/s · strike ${d.strikePower.toFixed(0)} · mass ${Math.round(d.mass)} kg`,
         statNote,
       );
     };
@@ -487,7 +487,7 @@ export class DesignerMode {
       d.style.marginLeft = "22px";
       d.style.marginTop = "0";
     }
-    hint("🧪 Test Drive (top bar) to feel these on the stage.", box);
+    hint("Everyone also has the base attacks: J punch combo · K kick · K (air) dive kick. 🧪 Test Drive to feel it all.", box);
   }
 
   private stopTestUi() {

@@ -65,7 +65,7 @@ export interface CharacterStats {
   defense: number;
 }
 
-export type MoveKey = "doubleJump" | "dash" | "glide" | "groundPound" | "wallJump";
+export type MoveKey = "doubleJump" | "dash" | "glide" | "groundPound" | "wallJump" | "spinAttack";
 
 export interface MoveDef {
   key: MoveKey;
@@ -80,7 +80,15 @@ export const MOVES: MoveDef[] = [
   { key: "glide", label: "Glide", control: "hold Space (falling)", desc: "Spread out and fall slowly." },
   { key: "groundPound", label: "Ground Pound", control: "C (in air)", desc: "Slam straight down with a shockwave." },
   { key: "wallJump", label: "Wall Jump", control: "Space (on a wall)", desc: "Kick off walls while airborne." },
+  { key: "spinAttack", label: "Spin Attack", control: "J (in air)", desc: "A 360° spinning strike that hits everything around you." },
 ];
+
+/**
+ * Base combat verbs — every character has these (no equip needed):
+ * J = 3-hit punch combo (jab → cross → double swing), K = kick,
+ * K in air = dive kick. Damage/knockback scale with the attack stat.
+ */
+export const BASE_ATTACKS = "J punch combo · K kick · K (air) dive kick";
 
 export interface CharacterData {
   id: string;
@@ -99,7 +107,7 @@ export interface CharacterData {
 export const JOSHUA: CharacterData = {
   id: "joshua",
   name: "Joshua",
-  body: { height: 1, width: 1, weight: 0.55, head: 1, ears: 1 },
+  body: { height: 1.6, width: 1.5, weight: 0.95, head: 0.85, ears: 0.8 },
   colors: {
     fur: [0.45, 0.3, 0.18],
     muzzle: [0.78, 0.62, 0.45],
@@ -107,15 +115,16 @@ export const JOSHUA: CharacterData = {
     accent: [0.85, 0.2, 0.25],
   },
   accessory: "bowtie",
-  stats: { speed: 6, jump: 6, attack: 6, defense: 6 },
-  moves: ["doubleJump", "dash", "groundPound"],
+  // The mountain that walks: huge, slow, hits like a landslide.
+  stats: { speed: 2, jump: 4, attack: 10, defense: 10 },
+  moves: ["groundPound", "spinAttack", "dash"],
 };
 
 export const PRESETS: CharacterData[] = [
   JOSHUA,
   {
     id: "scout",
-    name: "Scout",
+    name: "Prez TT",
     style: "rounded",
     body: { height: 0.85, width: 0.85, weight: 0.15, head: 1.1, ears: 1.4 },
     colors: {
@@ -173,8 +182,8 @@ export function normalizeCharacter(raw: unknown): CharacterData {
     name: typeof r.name === "string" && r.name ? r.name : "Unnamed",
     style: r.style === "rounded" ? "rounded" : "blocky",
     body: {
-      height: clamp(body.height, 0.75, 1.35, 1),
-      width: clamp(body.width, 0.75, 1.35, 1),
+      height: clamp(body.height, 0.75, 1.6, 1),
+      width: clamp(body.width, 0.75, 1.6, 1),
       weight: clamp(body.weight, 0, 1, 0.5),
       head: clamp(body.head, 0.8, 1.3, 1),
       ears: clamp(body.ears, 0.4, 1.8, 1),
@@ -204,6 +213,7 @@ export function cloneCharacter(c: CharacterData): CharacterData {
 // --- stats → movement numbers (single source of truth for play + designer UI) ---
 
 export interface DerivedMovement {
+  strikePower: number;
   runSpeed: number;
   jumpVelocity: number;
   doubleJumpVelocity: number;
@@ -221,6 +231,7 @@ export function deriveMovement(c: CharacterData): DerivedMovement {
   const runSpeed = 5.8 + s.speed * 0.8; // 6.6 .. 13.8
   const jumpVelocity = 7.8 + s.jump * 0.55; // 8.35 .. 13.3 (fall gravity makes arcs snappy)
   return {
+    strikePower: 6 + s.attack * 1.5, // punch/kick knockback (6+10 → 21 for a 10-attack bruiser)
     runSpeed,
     jumpVelocity,
     doubleJumpVelocity: jumpVelocity * 0.92,

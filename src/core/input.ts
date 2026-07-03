@@ -11,17 +11,22 @@ export interface InputState {
   jumpPressed: boolean; // edge
   dashPressed: boolean; // edge (Shift)
   poundPressed: boolean; // edge (C)
+  attackPressed: boolean; // edge (J) — punch combo / air spin
+  kickPressed: boolean; // edge (K) — kick / air dive kick
 }
 
 export class Input {
   state: InputState = {
     moveX: 0, moveZ: 0, jumpHeld: false, jumpPressed: false, dashPressed: false, poundPressed: false,
+    attackPressed: false, kickPressed: false,
   };
 
   private keys = new Set<string>();
   private jumpEdge = false;
   private dashEdge = false;
   private poundEdge = false;
+  private attackEdge = false;
+  private kickEdge = false;
   private attached = false;
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -30,6 +35,8 @@ export class Input {
     if (e.code === "Space") this.jumpEdge = true;
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") this.dashEdge = true;
     if (e.code === "KeyC") this.poundEdge = true;
+    if (e.code === "KeyJ") this.attackEdge = true;
+    if (e.code === "KeyK") this.kickEdge = true;
   };
   private onKeyUp = (e: KeyboardEvent) => this.keys.delete(e.code);
   private onBlur = () => this.keys.clear();
@@ -69,14 +76,20 @@ export class Input {
     this.state.jumpPressed = this.jumpEdge;
     this.state.dashPressed = this.dashEdge;
     this.state.poundPressed = this.poundEdge;
+    this.state.attackPressed = this.attackEdge;
+    this.state.kickPressed = this.kickEdge;
   }
 
   consume() {
     this.jumpEdge = false;
     this.dashEdge = false;
     this.poundEdge = false;
+    this.attackEdge = false;
+    this.kickEdge = false;
     this.state.jumpPressed = false;
     this.state.dashPressed = false;
     this.state.poundPressed = false;
+    this.state.attackPressed = false;
+    this.state.kickPressed = false;
   }
 }

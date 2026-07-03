@@ -11,7 +11,7 @@ import { toast } from "../editor/widgets";
 import type { GameState } from "./state";
 import type { PrefabInstance } from "../world/schema";
 import type { World } from "../world/world";
-import type { PlayerController } from "../player/controller";
+import type { PlayerController, StrikeOpts } from "../player/controller";
 import { spawnPoint } from "../world/world";
 
 const COIN_RADIUS = 1.6;
@@ -48,6 +48,9 @@ export class PlaySession {
   private won = false;
   private spinT = 0;
   private hiddenMarkers: string[] = [];
+  private dynamicProps: string[] = []; // balls/crates made punchable this run
+  private enemies: Array<{ id: string; pos: Vector3 }> = [];
+  private downedEnemies: string[] = [];
 
   constructor(
     private scene: Scene,
@@ -60,6 +63,7 @@ export class PlaySession {
       const pos = new Vector3(ent.pos[0], ent.pos[1], ent.pos[2]);
       if (ent.type === "coin") this.coins.push({ id: ent.id, pos });
       else if (ent.type === "checkpoint") this.checkpoints.push({ id: ent.id, pos });
+      else if (ent.type === "enemy") this.enemies.push({ id: ent.id, pos });
       else if (ent.type === "playerSpawn") {
         // editor aid, not a game object — hide during the run
         this.hiddenMarkers.push(ent.id);
@@ -91,9 +95,54 @@ export class PlaySession {
           last: mesh.position.clone(),
         });
         world.setKinematic(inst.id, true); // body follows the animated mesh
+      } else if (inst.prefab === "ball" || inst.prefab === "crate") {
+        // punchable props: dynamic for the run, restored on exit
+        world.setPrefabDynamic(inst.id, inst.prefab === "ball" ? 14 : 22);
+        this.dynamicProps.push(inst.id);
       }
     }
     state.resetRun();
+  }
+
+  /**
+   * A melee strike lands: shove dynamic props, poof enemies (+2 coins each).
+   * dir = facing; opts.arc is the min dot for the hit cone (-1 = all around).
+   */
+  applyStrike(pos: Vector3, dirX: number, dirZ: number, opts: StrikeOpts): number {
+    let hits = 0;
+    for (const id of this.dynamicProps) {
+      const mesh = this.world.prefabMeshes.get(id);
+      const body = this.world.prefabBody(id);
+      if (!mesh || !body) continue;
+      const dx = mesh.position.x - pos.x;
+      const dz = mesh.position.z - pos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > opts.radius + Math.max(mesh.scaling.x, mesh.scaling.z) / 2) continue;
+      const ndx = dist > 0.01 ? dx / dist : dirX;
+      const ndz = dist > 0.01 ? dz / dist : dirZ;
+      if (opts.arc > -1 && ndx * dirX + ndz * dirZ < opts.arc) continue;
+      const imp = opts.power * 16;
+      body.applyImpulse(new Vector3(ndx * imp, imp * 0.55, ndz * imp), mesh.absolutePosition);
+      hits++;
+    }
+    for (const e of this.enemies) {
+      if (this.downedEnemies.includes(e.id)) continue;
+      const mesh = this.world.entityMeshes.get(e.id);
+      if (!mesh || !mesh.isEnabled()) continue;
+      const dx = mesh.position.x - pos.x;
+      const dz = mesh.position.z - pos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > opts.radius + 0.8) continue;
+      const ndx = dist > 0.01 ? dx / dist : dirX;
+      const ndz = dist > 0.01 ? dz / dist : dirZ;
+      if (opts.arc > -1 && ndx * dirX + ndz * dirZ < opts.arc) continue;
+      this.downedEnemies.push(e.id);
+      mesh.setEnabled(false);
+      this.state.addCoins(2);
+      this.shockwave(mesh.position);
+      hits++;
+    }
+    return hits;
   }
 
   /** Ground-pound impact: an expanding, fading ring. */
@@ -248,6 +297,8 @@ export class PlaySession {
     }
     for (const id of this.collected) this.world.entityMeshes.get(id)?.setEnabled(true);
     for (const id of this.hiddenMarkers) this.world.entityMeshes.get(id)?.setEnabled(true);
+    for (const id of this.downedEnemies) this.world.entityMeshes.get(id)?.setEnabled(true);
+    for (const id of this.dynamicProps) this.world.resetPrefabBody(id);
     this.collected.clear();
     for (const fx of this.effects) {
       fx.mesh.material?.dispose();

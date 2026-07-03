@@ -23,8 +23,8 @@ the character in a level.
   "name": "Joshua",
   "style": "blocky",   // blocky (voxel) | rounded (organic spheres/capsules)
   "body": {
-    "height": 1.0,   // 0.75..1.35 — also scales the physics capsule
-    "width": 1.0,    // 0.75..1.35
+    "height": 1.0,   // 0.75..1.6 — also scales the physics capsule (1.6 = giant)
+    "width": 1.0,    // 0.75..1.6
     "weight": 0.55,  // 0..1 — belly/limbs; raises mass, softens acceleration
     "head": 1.0,     // 0.8..1.3
     "ears": 1.0      // 0.4..1.8
@@ -50,6 +50,23 @@ the character in a level.
 for how stats+body become movement numbers (run/jump/dash speed, acceleration,
 mass, capsule size). The designer shows the derived numbers live.
 
+## Combat
+
+Every character has the base attacks — no equip needed:
+
+| Attack | Control | Notes |
+| --- | --- | --- |
+| Punch combo | J, J, J | jab → cross → two-handed finisher (chain during the swing) |
+| Kick | K | roundhouse, bigger knockback |
+| Dive kick | K (in air) | flying kick that surges forward |
+| Spin attack | J (in air) | *equipable move* — 720° arms-out cyclone, hits all around |
+
+Knockback scales with the **attack** stat (`strikePower = 6 + attack × 1.5`).
+Strikes shove dynamic props (crates and balls become physical during a run —
+punch them off cliffs) and poof enemy markers for +2 coins each. Arms, legs,
+and torso all animate: jabs twist the torso, kicks lean back, the finisher
+lunges.
+
 ## Special moves
 
 | Move | Control | Effect |
@@ -64,7 +81,8 @@ Equip any subset — the Play HUD only shows the controls the character owns.
 
 ## Presets & persistence
 
-Built-ins: **Joshua** (the bear — balanced, bowtie), **Scout** (small/fast,
+Built-ins: **Joshua** (the bear — huge, slow, devastating: attack 10, spin
+attack + ground pound + charge dash), **Prez TT** (small/fast rounded runner,
 glide + wall jump), **Boulder** (heavy tank, pound + dash). Presets fork
 automatically when edited; user characters autosave to the browser
 (`localStorage`), and can be exported/imported as JSON. **Use in Play** sets

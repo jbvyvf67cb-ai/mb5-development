@@ -23,6 +23,8 @@ export interface RigFx {
   flip?: number;
   /** Vertical squash/stretch factor (1 = neutral). */
   stretch?: number;
+  /** Active attack animation (overlays the base pose). */
+  attack?: { kind: string; t: number };
 }
 
 const shade = (c: Vec3, f: number): Color3 => new Color3(c[0] * f, c[1] * f, c[2] * f);
@@ -385,13 +387,76 @@ export class CharacterRig {
         break;
     }
 
+    // --- attack overlays: arms punch, legs kick, torso twists ---
+    let torsoYaw = 0;
+    let spinAtkYaw: number | null = null;
+    const atk = fx.attack;
+    if (atk) {
+      // impact envelope: fast windup → hold → recover
+      const wind = ease(Math.min(1, atk.t / 0.4));
+      const rec = ease(Math.max(0, (atk.t - 0.62) / 0.38));
+      const a = wind * (1 - rec);
+      const mix = (j: Joint, tx: number, tz?: number) => {
+        j.tx = j.tx + (tx - j.tx) * a;
+        if (tz !== undefined) j.tz = j.tz + (tz - j.tz) * a;
+      };
+      switch (atk.kind) {
+        case "punch1": // right jab
+          mix(this.shoulderR, -1.62, -0.06);
+          mix(this.elbowR, -0.08);
+          mix(this.shoulderL, 0.45, 0.25);
+          torsoYaw = -0.38 * a;
+          break;
+        case "punch2": // left cross
+          mix(this.shoulderL, -1.62, 0.06);
+          mix(this.elbowL, -0.08);
+          mix(this.shoulderR, 0.45, -0.25);
+          torsoYaw = 0.38 * a;
+          break;
+        case "punch3": // both-arm slam
+          mix(this.shoulderL, -1.75, 0.15);
+          mix(this.shoulderR, -1.75, -0.15);
+          mix(this.elbowL, -0.12);
+          mix(this.elbowR, -0.12);
+          torsoPitch += 0.35 * a;
+          break;
+        case "kick": // right roundhouse
+          mix(this.hipR, -1.8, -0.12);
+          mix(this.kneeR, 0.12);
+          mix(this.hipL, 0.25);
+          mix(this.shoulderL, 0.2, 0.9);
+          mix(this.shoulderR, 0.2, -0.9);
+          torsoPitch -= 0.3 * a;
+          torsoYaw = 0.3 * a;
+          break;
+        case "airkick": // flying double kick
+          mix(this.hipL, -1.3, 0.08);
+          mix(this.hipR, -1.0, -0.08);
+          mix(this.kneeL, 0.18);
+          mix(this.kneeR, 0.35);
+          mix(this.shoulderL, 0.9, 0.5);
+          mix(this.shoulderR, 0.9, -0.5);
+          torsoPitch += 0.5 * a;
+          break;
+        case "spin": // 720° arms-out cyclone
+          mix(this.shoulderL, 0, 1.57);
+          mix(this.shoulderR, 0, -1.57);
+          mix(this.elbowL, -0.05);
+          mix(this.elbowR, -0.05);
+          spinAtkYaw = ease(atk.t) * Math.PI * 4; // two full turns, ends aligned
+          break;
+      }
+    }
+
     const k = Math.min(1, dt * 16);
     for (const j of [this.shoulderL, this.shoulderR, this.elbowL, this.elbowR, this.hipL, this.hipR, this.kneeL, this.kneeR]) {
       j.node.rotation.x += (j.tx - j.node.rotation.x) * k;
       j.node.rotation.z += (j.tz - j.node.rotation.z) * k;
     }
     this.torso.rotation.x += (torsoPitch - this.torso.rotation.x) * k;
+    this.torso.rotation.y += (torsoYaw - this.torso.rotation.y) * Math.min(1, dt * 20);
     this.torso.position.y = this.baseTorsoY + torsoBob;
+    this.spin.rotation.y = spinAtkYaw ?? 0;
 
     // flip (somersault / pound windup) around the center of mass.
     // FRONT flip = positive X (top of the head travels forward). When a flip

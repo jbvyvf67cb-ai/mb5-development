@@ -62,8 +62,8 @@ const CHARACTER_SCHEMA = {
       additionalProperties: false,
       required: ["height", "width", "weight", "head", "ears"],
       properties: {
-        height: { type: "number", description: "0.75..1.35 (1 = average)" },
-        width: { type: "number", description: "0.75..1.35" },
+        height: { type: "number", description: "0.75..1.6 (1 = average, 1.6 = giant)" },
+        width: { type: "number", description: "0.75..1.6" },
         weight: { type: "number", description: "0..1 chunkiness; also mass in play" },
         head: { type: "number", description: "0.8..1.3 head size" },
         ears: { type: "number", description: "0.4..1.8 ear size" },
