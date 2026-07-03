@@ -11,6 +11,41 @@ export interface AssistImage {
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
 }
 
+/**
+ * Read an image file for the API, downscaling to maxEdge px (long side) —
+ * phone photos of drawings are routinely 4000px/8MB, past API limits and
+ * wasted tokens; ~1568px is the model's sweet spot.
+ */
+export async function fileToAssistImage(
+  file: File,
+  maxEdge = 1568,
+): Promise<{ image: AssistImage; url: string }> {
+  const url = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error("could not read the file"));
+    r.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("that file is not a readable image"));
+    im.src = url;
+  });
+  const edge = Math.max(img.width, img.height);
+  if (edge <= maxEdge && url.length < 4_000_000) {
+    const mediaType = (file.type || "image/png") as AssistImage["mediaType"];
+    return { image: { data: url.slice(url.indexOf(",") + 1), mediaType }, url };
+  }
+  const k = Math.min(1, maxEdge / edge);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(img.width * k));
+  canvas.height = Math.max(1, Math.round(img.height * k));
+  canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const jpeg = canvas.toDataURL("image/jpeg", 0.92);
+  return { image: { data: jpeg.slice(jpeg.indexOf(",") + 1), mediaType: "image/jpeg" }, url: jpeg };
+}
+
 export interface AssistPanelOpts {
   title?: string;
   placeholder: string;
@@ -102,13 +137,9 @@ export function buildAssistPanel(opts: AssistPanelOpts): HTMLDivElement {
       input.onchange = () => {
         const file = input.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          const url = reader.result as string;
-          const mediaType = (file.type || "image/png") as AssistImage["mediaType"];
-          setImage({ data: url.slice(url.indexOf(",") + 1), mediaType }, url);
-        };
-        reader.readAsDataURL(file);
+        fileToAssistImage(file)
+          .then(({ image: img, url }) => setImage(img, url))
+          .catch(() => setImage(undefined));
       };
       input.click();
     }, "", row);

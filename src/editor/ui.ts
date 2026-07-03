@@ -148,6 +148,8 @@ export class EditorUI {
     btn("Open", () => this.load(), "", bar);
     btn("Save", () => this.save(), "", bar);
     btn("Demo", () => confirm("Discard current level and load the demo?") && this.host.loadDemo(), "", bar);
+    const imp = btn("🗺 Import", () => this.showMapImport(), "", bar);
+    imp.title = "Turn a drawn map (photo/scan) into a full continent with Claude";
     btn("Publish", () => this.showPublish(), "", bar);
     div("", bar).style.cssText = "width:1px;height:22px;background:#262a3a;margin:0 4px";
     this.undoBtn = btn("↶", () => this.host.editor.undo(), "ghost", bar);
@@ -534,6 +536,106 @@ export class EditorUI {
       kk.style.minWidth = "110px";
       txt("span", desc, "mb5-lbl", r);
     }
+  }
+
+  /** 🗺 Import: a drawn map (photo/scan/sketch) → a full continent via Claude. */
+  private showMapImport() {
+    const m = modal("🗺 Import a map from a drawing");
+    hint(
+      "Attach a photo or scan of a drawn map. Claude reads it — coastlines, mountains, rivers, " +
+      "forests, paths, labels — and builds the whole continent: terrain, scenery, and a playable " +
+      "route (spawn → coins → checkpoints → goal), no questions asked. Then tune it by hand or " +
+      "with the ✨ Assist box, and Publish it to the repo like any level.",
+      m.body,
+    );
+    sep(m.body);
+
+    // API key (same browser-local key as the Assist boxes)
+    const keyRow = row(m.body);
+    const keyIn = el("input", "mb5-in", keyRow);
+    keyIn.type = "password";
+    keyIn.placeholder = "Anthropic API key (kept in this browser)";
+    btn("Save key", async () => {
+      const { saveApiKey } = await import("../ai/assist");
+      saveApiKey(keyIn.value.trim());
+      keyRow.style.display = keyIn.value.trim() ? "none" : "flex";
+    }, "", keyRow);
+    void import("../ai/assist").then(({ loadApiKey }) => {
+      keyIn.value = loadApiKey();
+      keyRow.style.display = loadApiKey() ? "none" : "flex";
+    });
+
+    let image: import("../ai/panel").AssistImage | undefined;
+    const pickRow = row(m.body);
+    btn("📷 Choose image…", () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/png,image/jpeg,image/webp,image/gif";
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        try {
+          const { fileToAssistImage } = await import("../ai/panel");
+          const res = await fileToAssistImage(file);
+          image = res.image;
+          preview.src = res.url;
+          preview.style.display = "block";
+        } catch (err) {
+          status.textContent = err instanceof Error ? err.message : String(err);
+        }
+      };
+      input.click();
+    }, "", pickRow);
+    const preview = el("img", "", m.body);
+    preview.style.cssText =
+      "display:none;max-width:100%;max-height:230px;object-fit:contain;border-radius:8px;border:1px solid #303650;margin:6px 0";
+
+    const ta = el("textarea", "mb5-in", m.body);
+    ta.rows = 2;
+    ta.placeholder = "optional guidance — e.g. \"the west island is a volcano\", \"night theme\", \"go heavy on coins\"";
+    ta.style.cssText += "resize:vertical;font-family:inherit;margin-top:6px";
+    ta.addEventListener("keydown", (e) => e.stopPropagation());
+
+    const status = hint("", m.body);
+    const log = div("", m.body);
+    log.style.cssText = "font-size:11px;color:#8b92ab;line-height:1.5;max-height:120px;overflow-y:auto";
+
+    let busy = false;
+    const go = btn("Build the continent", async () => {
+      if (busy) return;
+      if (!image) {
+        status.textContent = "attach a picture of the map first";
+        return;
+      }
+      const { loadApiKey } = await import("../ai/assist");
+      if (!loadApiKey()) {
+        keyRow.style.display = "flex";
+        status.textContent = "add your Anthropic API key first";
+        return;
+      }
+      busy = true;
+      go.disabled = true;
+      (status as HTMLElement).style.color = "";
+      status.textContent = "reading the drawing… (a detailed map can take a minute)";
+      try {
+        const { generateMapPlan } = await import("../ai/assist");
+        const plan = await generateMapPlan(image, ta.value);
+        status.textContent = "rasterizing terrain + placing everything…";
+        const { compileMapPlan } = await import("../ai/mapplan");
+        const { data, log: lines } = compileMapPlan(plan);
+        this.host.loadData(data);
+        toast(`Imported "${data.meta.name}" ✓ — tune it, then Publish`, "ok", 5000);
+        status.textContent = plan.notes || "done";
+        log.textContent = "";
+        for (const l of lines) txt("div", l, "", log);
+      } catch (err) {
+        (status as HTMLElement).style.color = "#f38ba8";
+        status.textContent = err instanceof Error ? err.message : String(err);
+      } finally {
+        busy = false;
+        go.disabled = false;
+      }
+    }, "primary", m.body);
   }
 
   private showPublish() {

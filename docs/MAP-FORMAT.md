@@ -164,9 +164,21 @@ platforms carry the player; springs refresh air moves like a fresh jump.
 
 ---
 
-## Converting a hand-drawn map (the intended future flow)
+## Converting a hand-drawn map
 
-A top-down hand-drawn sketch maps to `ContinentData` like this:
+**The built-in way: top bar → 🗺 Import.** Attach a photo/scan of the drawing
+and Claude converts it in one shot. It emits a **MapPlan**
+(`src/ai/mapplan.ts`) — traced coastline polygons, lakes, peaks, ridges,
+river valleys, walking paths, forest scatters, composed structures, and
+gameplay markers, all in normalized drawing coordinates via structured
+outputs — and `compileMapPlan()` rasterizes that deterministically into the
+`ContinentData` below (signed-distance coastlines → beach ramps → plateaus,
+same math as `tools/maplib.mjs`; every value clamped, counts capped). The
+result is a normal level: edit it by hand, adjust it with the ✨ Assist box,
+publish it to `assets/continents/`.
+
+The same mapping, if you ever do it by hand (or want to understand what the
+importer decides):
 
 1. **Pick a scale.** Decide what the page spans in meters (e.g. the drawing =
    120 × 120 m, centered on origin → X,Z ∈ [−60, 60]). Map pixel/grid positions

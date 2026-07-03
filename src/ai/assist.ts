@@ -13,6 +13,7 @@ import { equipableMoves, SLOT_LABELS } from "../character/moves";
 import { allPrefabs } from "../world/prefabs";
 import type { ContinentData } from "../world/schema";
 import type { LevelOp } from "./ops";
+import type { MapPlan } from "./mapplan";
 
 const KEY_STORAGE = "mb5.anthropicKey";
 const MODEL = "claude-opus-4-8";
@@ -327,6 +328,82 @@ export async function generateLevelOps(prompt: string, data: ContinentData): Pro
   });
   const parsed = readJson(response) as unknown as OpsResult;
   return { summary: parsed.summary ?? "done", ops: Array.isArray(parsed.ops) ? parsed.ops : [] };
+}
+
+// ------------------------------------------------------------------
+// Map import — a drawn map (photo/scan/sketch) → a full continent
+// ------------------------------------------------------------------
+
+/**
+ * Read a drawn map and produce a MapPlan (the compiler rasterizes it into
+ * ContinentData). The whole contract: interpret the drawing decisively and
+ * completely — this call must never come back asking questions.
+ */
+export async function generateMapPlan(image: PromptImage, notes: string): Promise<MapPlan> {
+  const { MAP_PLAN_SCHEMA } = await import("./mapplan");
+  const gameplayPrefabs =
+    "spring (launch pad), boost (speed pad), spikes (hazard), movingPlatform, goal (level finish), " +
+    "ring (collect arch), crystal (glowing), ball/crate (physical props)";
+  const response = await client().messages.create({
+    model: MODEL,
+    max_tokens: 24000,
+    thinking: { type: "adaptive" },
+    system:
+      "You convert a hand-drawn or sketched map into a MapPlan for a 3D platformer continent " +
+      "(Mario Odyssey / Sonic Dream Team energy). You are the cartographer AND the level " +
+      "designer: read the drawing, decide everything yourself, and emit one complete plan. " +
+      "NEVER ask questions, never hedge — where the drawing is ambiguous, choose the most " +
+      "playable, most fun interpretation.\n\n" +
+      "COORDINATES: u goes left→right 0..1 and v goes top→bottom 0..1 over the WHOLE image. " +
+      "Trace shapes in these normalized coordinates, generously: 10-24 outline points for " +
+      "large landmasses, 6-10 for islets. Cover everything drawn — every landmass, island, " +
+      "lake, river, mountain, forest, path, and symbol should appear in the plan.\n\n" +
+      "HOW TO READ A DRAWING:\n" +
+      "- Closed outlines with water around/between them → landmasses (trace each coastline). " +
+      "Blue/hatched/wavy areas or an obvious ocean → seaLevel ~0.3; a map with no water at " +
+      "all → seaLevel null and one landmass covering the canvas.\n" +
+      "- Concentric rings, triangle/caret symbols, radial shading → peaks (bigger symbol = " +
+      "taller). Chains of them → also a ridge along the chain.\n" +
+      "- Lines snaking across land: blue/double lines → valleys (rivers — carve depth so " +
+      "they read; depth > plateau reaches the water table); dashed/dotted/brown lines → " +
+      "paths (graded walking trails). Use paths for anything that looks like a route.\n" +
+      "- Tree/cloud-cluster symbols → tree or pine scatters over that region (20-60 for a " +
+      "forest). Dots/boulder symbols → rock scatters. Stars/gems → crystal scatters.\n" +
+      "- Buildings/houses/castles/towers → compose from block/wall/pillar/dome/gate/stairs " +
+      "placements with skins (brick, planks, stone). A drawn bridge → bridge prefab rotated " +
+      "to span the gap.\n" +
+      "- READ ALL TEXT in the drawing: names label the map or regions (use them in `name` " +
+      "and honor them in `notes`); words like 'volcano', 'swamp', 'ice' change theme, " +
+      "palette, and features. Arrows often mean routes → paths + coinTrails. An X or flag " +
+      "or 'goal'/'finish' → the goal placement. 'Start'/'spawn'/a stick figure → playerSpawn.\n" +
+      "- Choose theme from the drawing's mood/labels: day | sunset | night | alien | snow | " +
+      "desert.\n\n" +
+      "SCALE: sizeX/sizeZ 200-550 m depending on how much is drawn (busy drawing → bigger). " +
+      "Plateau heights 4-10 m, big peaks 15-40 m. Keep slopes walkable: beach width ≥ 5.\n\n" +
+      `GAMEPLAY SEASONING (always, even if not drawn): exactly one playerSpawn near the main ` +
+      `landmass's coast or the drawn start; a coinTrail (8-20 coins) along the main route; ` +
+      `2-4 checkpoints spread across the journey; a goal at the most distant/climactic ` +
+      `landmark; 2-6 enemies guarding interesting spots; a spring or boost where a jump or ` +
+      `gap begs for one. Gameplay prefabs: ${gameplayPrefabs}.\n\n` +
+      "The user may add guidance notes — honor them over your own reading where they " +
+      "conflict. Finish with `notes`: 1-2 sentences on how you read the drawing.",
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: image.mediaType, data: image.data } },
+          {
+            type: "text",
+            text: notes.trim()
+              ? `Convert this drawn map into a MapPlan. Extra guidance: ${notes.trim()}`
+              : "Convert this drawn map into a MapPlan.",
+          },
+        ],
+      },
+    ],
+    output_config: { format: { type: "json_schema", schema: MAP_PLAN_SCHEMA } },
+  });
+  return readJson(response) as unknown as MapPlan;
 }
 
 // ------------------------------------------------------------------

@@ -124,6 +124,13 @@ export class App {
     w.__reframe = () => this.reframe();
     w.__setMode = (m: Mode) => (m === this.mode ? undefined : this.toggleMode());
     w.__lockWatcher = this.lockWatcher;
+    // Headless QA hook: compile a MapPlan (the image-import intermediate) and load it.
+    w.__importMapPlan = async (plan: unknown) => {
+      const { compileMapPlan } = await import("./ai/mapplan");
+      const res = compileMapPlan(plan as import("./ai/mapplan").MapPlan);
+      this.loadContinent(res.data);
+      return { log: res.log, prefabs: res.data.prefabs.length, entities: res.data.entities.length };
+    };
 
     this.reframe();
   }

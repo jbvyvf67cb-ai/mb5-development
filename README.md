@@ -94,6 +94,27 @@ character size. Coins spin and glow (GlowLayer), checkpoints set respawn,
 kill-plane respawns you. Tab returns to editing; pick who you play as in the
 top bar or via the designer's **▶ Use in Play**.
 
+### 🗺 Import — a drawn map becomes a continent
+
+Top bar → **🗺 Import**. Attach a photo or scan of a drawn map (as detailed
+as you like — coastlines, mountains, rivers, forests, paths, labels, symbols)
+and Claude builds the whole continent **without asking questions**: it traces
+every landmass and lake, reads peaks/ridges from mountain symbols, carves
+rivers, grades drawn routes into walkable trails, scatters the forests,
+composes drawn buildings from blocks and skins, honors written labels
+("volcano", "start", "goal"…), picks a theme, and always seasons the level
+for play — one spawn, a coin trail along the main route, checkpoints, a goal
+at the climactic landmark. An optional guidance box steers the reading
+(*"the west island is a volcano"*, *"night theme"*).
+
+Under the hood Claude emits a compact **MapPlan** (vector coastlines/
+features in drawing coordinates, via structured outputs), and the app
+rasterizes it deterministically into the normal level format — so the result
+is fully hand-editable, adjustable with the ✨ Assist box below, and
+publishable to the repo like any level (`assets/continents/`). Those
+published continents are the units the future **globe tab** will place on
+the planet.
+
 ### ✨ Assist — describe it, then tune it
 
 Both editors have a Claude-powered prompt box (bottom-right in Build, under
