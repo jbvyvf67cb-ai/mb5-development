@@ -36,6 +36,29 @@ glide, wall boost) layered onto a shared base kit.
    camera distance, and mass — a giant should tower, lumber, and hit like a
    landslide; a runt should be quick and close-framed.
 
+## Flow rules (the integration layer)
+
+Actions are glued together by four rules, tuned in the fluidity loop
+(`docs/TUNING-LOG.md`):
+
+1. **Inputs buffer; presses during a move queue.** Dash/attack/kick/power
+   buffer 0.16 s (jump 0.12 s); pressed during a move they become queued
+   intents (0.6 s) that fire the moment a window opens.
+2. **Cancel windows.** Once a move's hit is out (or it's 60% done), a
+   buffered jump or dash ends the recovery. Slams commit until touchdown —
+   but clear stale jump intent at START, so a jump pressed during the slam
+   fires out of the landing.
+3. **Overspeed is a reward.** Above run speed with the stick roughly
+   aligned, the heading steers and the excess bleeds gently (5 m/s² air,
+   12 m/s² ground); the body faces the velocity. Release or reverse to
+   brake hard. Apex float (fall gravity ramps in from 35%) gives every jump
+   an aiming beat.
+4. **Hits pay forward.** A connected air hit refreshes the whole air kit
+   and pops you up — juggle strings (homing strike → double jump → dive
+   kick → …) sustain as long as you keep landing them. Combo chains accept
+   the next press across the last 75% of a phase, and buffered same-slot
+   presses count as chain intent.
+
 ## The move system (how 50+ moves stay fluid on any character)
 
 A move is **data**, not code: `MoveSpec = trigger slot + physics phases +

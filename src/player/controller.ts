@@ -312,6 +312,10 @@ export class PlayerController {
       chainQueued: false,
     };
     this.gliding = false;
+    // Slams commit at START: a jump buffered BEFORE the pound is stale
+    // intent and must not auto-fire on the landing — but a jump pressed
+    // DURING the slam is a real request and flows out of the touchdown.
+    if (spec.phases.some((p) => p.until === "ground")) this.buffer = 0;
     if (spec.phases[0]?.homing) {
       this.homingTarget = this.onQueryTarget?.(this.position, 16) ?? null;
     }
@@ -655,7 +659,8 @@ export class PlayerController {
             arc: -1,
           });
         }
-        this.buffer = 0; // a jump buffered before the slam must not fire on landing
+        // (stale pre-slam jump intent was cleared at move start; a jump
+        // pressed during the slam fires out of this landing)
       }
 
       // phase end / chain
@@ -817,8 +822,11 @@ export class PlayerController {
   private finishFrame(vx: number, vz: number, dt: number) {
     this.pounding = this.active?.spec.slot === "powerAir";
     this.hSpeed = Math.hypot(vx, vz);
-    // stride-synced gait: feet stay planted instead of sliding
-    this.runPhase = (this.runPhase + (this.hSpeed * dt) / STRIDE) % 1;
+    // stride-synced gait: feet stay planted instead of sliding; cadence is
+    // capped a bit above run speed so overspeed carry reads as a powerful
+    // stride, not a leg blur
+    const gaitSpeed = Math.min(this.hSpeed, this.mv.runSpeed * 1.3);
+    this.runPhase = (this.runPhase + (gaitSpeed * dt) / STRIDE) % 1;
     if (this.gliding) this.pose = "glide";
     else if (this.trailActive && this.grounded) this.pose = "dash";
     else if (!this.grounded) this.pose = this.vy > 1 ? "jump" : "fall";

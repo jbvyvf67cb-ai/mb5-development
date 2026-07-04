@@ -35,6 +35,11 @@ going, and keep this file updated in the same commit as the change.
 5. **Juggle refresh.** onStrike returns hit count; a connected AIR hit
    refreshes the whole air kit and pops the player up (vy ≥ 4.5) — homing
    strike → hit → double jump → dive kick → hit → … strings flow.
+6. **Pound→jump flow + gait cadence cap.** Slams clear stale jump intent at
+   move START (commit point) instead of at landing, so a jump pressed during
+   the slam fires straight out of the touchdown (verified: slam −34 →
+   land → jump). Leg cadence caps at 1.3× run speed so overspeed carry
+   reads as a powerful stride, not a leg blur.
 
 ## Backlog (ordered by fluidity impact)
 
