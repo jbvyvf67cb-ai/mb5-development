@@ -666,10 +666,27 @@ export class PlayerController {
     // or reversing (kills the ice-skater feel).
     const baseAccel = this.grounded ? this.mv.groundAccel : this.mv.airAccel;
     const reversing = vel.x * targetX + vel.z * targetZ < -0.1;
-    const factor = mag < 0.1 ? 1.7 : reversing ? 1.5 : 1;
-    const accel = baseAccel * factor * dt;
-    vx = vel.x + clamp(targetX - vel.x, -accel, accel);
-    vz = vel.z + clamp(targetZ - vel.z, -accel, accel);
+    const prevSp = Math.hypot(vel.x, vel.z);
+    if (prevSp > this.mv.runSpeed * 1.05 && mag > 0.1 && vel.x * targetX + vel.z * targetZ > 0) {
+      // Speed above run speed (dash-jumps, boosts, boost pads) is a REWARD:
+      // while the stick roughly agrees, steer the heading and bleed the
+      // excess gently instead of braking to run speed at full accel.
+      // Releasing the stick or reversing still brakes hard — control wins.
+      const bleed = this.grounded ? 12 : 5;
+      const sp = Math.max(this.mv.runSpeed, prevSp - bleed * dt);
+      const heading = lerpAngle(
+        Math.atan2(vel.x, vel.z),
+        Math.atan2(targetX, targetZ),
+        Math.min(1, dt * 3),
+      );
+      vx = Math.sin(heading) * sp;
+      vz = Math.cos(heading) * sp;
+    } else {
+      const factor = mag < 0.1 ? 1.7 : reversing ? 1.5 : 1;
+      const accel = baseAccel * factor * dt;
+      vx = vel.x + clamp(targetX - vel.x, -accel, accel);
+      vz = vel.z + clamp(targetZ - vel.z, -accel, accel);
+    }
 
     // jumps: ground (buffer+coyote) → wall slot → jumpAir slot
     if (this.buffer > 0 && this.coyote > 0) {

@@ -16,14 +16,14 @@ going, and keep this file updated in the same commit as the change.
    dash ends the recovery — kick→dash and kick→jump verified flowing;
    slam phases stay committed. Buffered jumps also fire air moves on release
    (double jump out of a spin attack).
+2. **Momentum carry above run speed.** While the stick roughly agrees with
+   the velocity, speed above run speed steers (heading lerp dt*3) and bleeds
+   gently (5 m/s² air, 12 m/s² ground) instead of braking at full accel.
+   Verified: dash-jump launches at 31 m/s and lands at 22 across a full arc.
+   Releasing the stick or reversing still brakes hard.
 
 ## Backlog (ordered by fluidity impact)
 
-1. **Momentum carry above run speed.** Dash-jumps, boost pads, and boost
-   moves currently bleed excess speed at full accel rates (a boost pad's
-   24 m/s dies in ~0.15 s of held W). When moving faster than run speed with
-   input roughly aligned: steer the heading, bleed the excess slowly
-   (~6 m/s² air, ~12 m/s² ground) — Sonic-style flow.
 3. **Apex float.** Soften the extra fall gravity in the |vy| < ~2 window so
    jumps hang a beat at the top (better target adjustment, better feel).
 4. **Snappier reversals.** Raise the reversing decel factor so 180° turns
