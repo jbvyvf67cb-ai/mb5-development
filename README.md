@@ -109,7 +109,11 @@ top bar or via the designer's **▶ Use in Play**.
 
 Top bar → **🗺 Import**. Attach a photo or scan of a drawn map (as detailed
 as you like — coastlines, mountains, rivers, forests, paths, labels, symbols)
-and Claude builds the whole continent **without asking questions**: it traces
+and Claude builds the whole continent **at journey scale** — worlds come out
+~2-3 km across, sized so crossing one on foot takes about five minutes, with
+mountains (40-120 m), rivers, and forests proportioned to match, boost pads
+along the long legs, and the terrain palette's snow line stretched to the
+world's real height range. It does all of this **without asking questions**: it traces
 every landmass and lake, reads peaks/ridges from mountain symbols, carves
 rivers, grades drawn routes into walkable trails, scatters the forests,
 composes drawn buildings from blocks and skins, honors written labels

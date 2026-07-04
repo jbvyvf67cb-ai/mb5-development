@@ -309,7 +309,7 @@ export class App {
       this.designer?.tick(dt);
     }
     // Distance-cull only while playing; the editor must always show everything.
-    if (this.mode === "play") this.world.updateCulling(this.camera.position);
+    if (this.mode === "play") this.world.updateCulling(this.camera.position, 700);
   }
 
   /**

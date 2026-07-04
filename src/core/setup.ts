@@ -55,8 +55,10 @@ export async function bootEngine(canvas: HTMLCanvasElement): Promise<BootResult>
   );
   camera.attachControl(canvas, true);
   camera.lowerRadiusLimit = 6;
-  camera.upperRadiusLimit = 500;
-  camera.maxZ = 2000;
+  // Journey-scale worlds: ~3 km across. The editor must be able to frame one
+  // whole, and play must see across a valley without terrain popping out.
+  camera.upperRadiusLimit = 3600;
+  camera.maxZ = 9000;
   camera.wheelDeltaPercentage = 0.01;
   // Right-drag (or ctrl+drag) pans; default sensibility is far too slow for a
   // world-scale editor.

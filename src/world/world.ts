@@ -251,10 +251,18 @@ export class World implements ContinentResult {
   }
 
   /** Distance-cull prefab meshes around a point (frustum culling still applies). */
+  /** Ids gameplay has hidden (collected coins, downed enemies, spawn markers)
+   * — distance culling must never resurrect them mid-run. */
+  gameplayHidden = new Set<string>();
+
   updateCulling(cam: Vector3, radius = 240) {
     const r2 = radius * radius;
     for (const mesh of this.prefabMeshes.values()) {
       mesh.setEnabled(Vector3.DistanceSquared(cam, mesh.position) < r2);
+    }
+    // Journey-scale worlds carry hundreds of coins/markers — cull those too.
+    for (const [id, mesh] of this.entityMeshes) {
+      mesh.setEnabled(!this.gameplayHidden.has(id) && Vector3.DistanceSquared(cam, mesh.position) < r2);
     }
   }
 

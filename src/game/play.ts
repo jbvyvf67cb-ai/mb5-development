@@ -68,6 +68,7 @@ export class PlaySession {
       else if (ent.type === "playerSpawn") {
         // editor aid, not a game object — hide during the run
         this.hiddenMarkers.push(ent.id);
+        world.gameplayHidden.add(ent.id);
         world.entityMeshes.get(ent.id)?.setEnabled(false);
       }
     }
@@ -139,6 +140,7 @@ export class PlaySession {
       const ndz = dist > 0.01 ? dz / dist : dirZ;
       if (opts.arc > -1 && ndx * dirX + ndz * dirZ < opts.arc) continue;
       this.downedEnemies.push(e.id);
+      this.world.gameplayHidden.add(e.id);
       mesh.setEnabled(false);
       this.state.addCoins(2);
       this.shockwave(mesh.position);
@@ -224,6 +226,7 @@ export class PlaySession {
       if (this.collected.has(coin.id)) continue;
       if (Vector3.DistanceSquared(p, coin.pos) < COIN_RADIUS * COIN_RADIUS) {
         this.collected.add(coin.id);
+        this.world.gameplayHidden.add(coin.id);
         this.world.entityMeshes.get(coin.id)?.setEnabled(false);
         this.state.addCoins(1);
       }
@@ -331,6 +334,7 @@ export class PlaySession {
       mesh.rotation.set(0, 0, Math.PI / 2);
       mesh.position.copyFrom(coin.pos);
     }
+    this.world.gameplayHidden.clear();
     for (const id of this.collected) this.world.entityMeshes.get(id)?.setEnabled(true);
     for (const id of this.hiddenMarkers) this.world.entityMeshes.get(id)?.setEnabled(true);
     for (const id of this.downedEnemies) this.world.entityMeshes.get(id)?.setEnabled(true);

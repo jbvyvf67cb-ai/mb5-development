@@ -54,8 +54,8 @@ export const MAP_PLAN_SCHEMA = {
   ],
   properties: {
     name: { type: "string" },
-    sizeX: { type: "number", description: "world width in meters (200-550 typical)" },
-    sizeZ: { type: "number", description: "world depth in meters (200-550 typical)" },
+    sizeX: { type: "number", description: "world width in meters (1800-3200 typical — crossing the whole world on foot should take ~5 minutes)" },
+    sizeZ: { type: "number", description: "world depth in meters (1800-3200 typical)" },
     theme: { type: "string", enum: ["day", "sunset", "night", "alien", "snow", "desert"] },
     seaLevel: {
       type: ["number", "null"],
@@ -70,8 +70,8 @@ export const MAP_PLAN_SCHEMA = {
         required: ["outline", "plateau", "beach"],
         properties: {
           outline: uvPoly,
-          plateau: { type: "number", description: "interior height in meters (4-10 typical)" },
-          beach: { type: "number", description: "meters of coastal ramp from waterline to plateau (5-12)" },
+          plateau: { type: "number", description: "interior height in meters (6-14 typical)" },
+          beach: { type: "number", description: "meters of coastal ramp from waterline to plateau (20-60 at world scale)" },
           lakes: { type: "array", items: uvPoly, description: "interior water holes" },
         },
       },
@@ -86,7 +86,7 @@ export const MAP_PLAN_SCHEMA = {
         properties: {
           at: uv,
           radius: { type: "number", description: "in u units, 0.03-0.25" },
-          height: { type: "number", description: "meters above the plateau, 8-40" },
+          height: { type: "number", description: "meters above the plateau, 40-120 (real mountains at world scale)" },
         },
       },
     },
@@ -99,8 +99,8 @@ export const MAP_PLAN_SCHEMA = {
         required: ["line", "height", "width"],
         properties: {
           line: uvLine,
-          height: { type: "number", description: "meters, 3-20" },
-          width: { type: "number", description: "meters, 4-18" },
+          height: { type: "number", description: "meters, 10-60" },
+          width: { type: "number", description: "meters, 25-140" },
         },
       },
     },
@@ -113,8 +113,8 @@ export const MAP_PLAN_SCHEMA = {
         required: ["line", "depth", "width"],
         properties: {
           line: uvLine,
-          depth: { type: "number", description: "meters, 2-12" },
-          width: { type: "number", description: "meters, 4-24" },
+          depth: { type: "number", description: "meters, 6-30" },
+          width: { type: "number", description: "meters, 20-120" },
         },
       },
     },
@@ -125,7 +125,7 @@ export const MAP_PLAN_SCHEMA = {
         type: "object",
         additionalProperties: false,
         required: ["line"],
-        properties: { line: uvLine, width: { type: "number", description: "meters, default 5" } },
+        properties: { line: uvLine, width: { type: "number", description: "meters, 8-24 (default 14)" } },
       },
     },
     scatters: {
@@ -138,7 +138,7 @@ export const MAP_PLAN_SCHEMA = {
         properties: {
           prefab: { type: "string", enum: allPrefabs().map((p) => p.key) },
           region: uvPoly,
-          count: { type: "integer", description: "1-80" },
+          count: { type: "integer", description: "1-220 (a real forest is 80-200 trees)" },
           tint: rgb,
           skin: { type: "string", enum: [...SKINS] },
         },
@@ -181,7 +181,7 @@ export const MAP_PLAN_SCHEMA = {
         type: "object",
         additionalProperties: false,
         required: ["line", "count"],
-        properties: { line: uvLine, count: { type: "integer", description: "3-30" } },
+        properties: { line: uvLine, count: { type: "integer", description: "3-80 (long routes deserve 30-60)" } },
       },
     },
     notes: { type: "string", description: "One or two sentences: how you read the drawing (mention labels you honored)." },
@@ -279,8 +279,11 @@ const clamp = (v: unknown, lo: number, hi: number, d: number): number => {
 
 // ---------- the compiler ----------
 
-const MAX_PREFABS = 460; // perf guardrail for one continent
-const MAX_ENTITIES = 220;
+// Perf guardrails for one continent. Worlds are journey-scale (~5 minutes to
+// cross on foot ≈ 2-3 km), so the caps are generous; distance culling keeps
+// the per-frame cost bounded in play.
+const MAX_PREFABS = 1300;
+const MAX_ENTITIES = 500;
 
 export interface CompiledMap {
   data: ContinentData;
@@ -289,8 +292,8 @@ export interface CompiledMap {
 
 export function compileMapPlan(raw: MapPlan): CompiledMap {
   const log: string[] = [];
-  const W = clamp(raw.sizeX, 120, 640, 320);
-  const D = clamp(raw.sizeZ, 120, 640, 320);
+  const W = clamp(raw.sizeX, 240, 3600, 2400);
+  const D = clamp(raw.sizeZ, 240, 3600, 2400);
   const sea = raw.seaLevel === null || raw.seaLevel === undefined ? undefined : clamp(raw.seaLevel, -6, 6, 0.3);
   const theme = THEMES[raw.theme] ? raw.theme : "day";
 
@@ -305,8 +308,8 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
     .map((l) => ({
       poly: mapPoly(l.outline),
       holes: (l.lakes ?? []).map(mapPoly).filter((h) => h.length >= 3),
-      plateau: clamp(l.plateau, 1.5, 16, 6),
-      beach: clamp(l.beach, 2, 20, 7),
+      plateau: clamp(l.plateau, 1.5, 30, 9),
+      beach: clamp(l.beach, 2, 120, 35),
     }))
     .filter((l) => l.poly.length >= 3);
   if (!lands.length) {
@@ -319,24 +322,24 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
     });
     log.push("no landmasses in the plan — filled the canvas with ground");
   }
-  const peaks = (raw.peaks ?? []).slice(0, 12).map((p) => ({
+  const peaks = (raw.peaks ?? []).slice(0, 16).map((p) => ({
     c: toXZ(p.at ?? [0.5, 0.5]),
     r: clamp(p.radius, 0.02, 0.3, 0.1) * W,
-    H: clamp(p.height, 3, 48, 18),
+    H: clamp(p.height, 3, 140, 60),
   }));
-  const ridges = (raw.ridges ?? []).slice(0, 14).map((r) => ({
+  const ridges = (raw.ridges ?? []).slice(0, 18).map((r) => ({
     line: mapPoly(r.line),
-    amp: clamp(r.height, 2, 24, 8),
-    width: clamp(r.width, 3, 26, 8),
+    amp: clamp(r.height, 2, 70, 24),
+    width: clamp(r.width, 3, 160, 50),
   })).filter((r) => r.line.length >= 2);
-  const valleys = (raw.valleys ?? []).slice(0, 14).map((v) => ({
+  const valleys = (raw.valleys ?? []).slice(0, 18).map((v) => ({
     line: mapPoly(v.line),
-    depth: clamp(v.depth, 1, 14, 4),
-    width: clamp(v.width, 3, 30, 10),
+    depth: clamp(v.depth, 1, 40, 10),
+    width: clamp(v.width, 3, 200, 45),
   })).filter((v) => v.line.length >= 2);
-  const paths = (raw.paths ?? []).slice(0, 12).map((p) => ({
+  const paths = (raw.paths ?? []).slice(0, 16).map((p) => ({
     line: mapPoly(p.line),
-    width: clamp(p.width, 3, 14, 5),
+    width: clamp(p.width, 3, 40, 14),
   })).filter((p) => p.line.length >= 2);
 
   // --- height field ---
@@ -385,8 +388,13 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
     return h;
   };
 
-  const cols = Math.round(clamp(W / 2.2, 41, 161, 121));
-  const rows = Math.round(clamp(D / 2.2, 41, 161, 121));
+  // Adaptive terrain detail: fine 2.2 m cells for small stages, up to 257
+  // samples per axis for journey-scale worlds (a 3 km continent gets ~12 m
+  // cells — macro relief from terrain, platforming detail from prefabs).
+  // 257² caps the heightmap at ~66k samples: fast to rasterize, light to
+  // serialize, fine for the Havok mesh collider.
+  const cols = Math.round(clamp(W / 2.2, 41, 257, 121));
+  const rows = Math.round(clamp(D / 2.2, 41, 257, 121));
   const heights = new Array<number>(cols * rows);
   let maxH = -Infinity;
   let minH = Infinity;
@@ -466,7 +474,7 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
   };
 
   // individual placements first (they matter most if the cap bites)
-  for (const pl of (raw.placements ?? []).slice(0, 220)) {
+  for (const pl of (raw.placements ?? []).slice(0, 400)) {
     const def = getPrefab(pl.prefab ?? "");
     if (!def) continue;
     const [x, z] = toXZ(pl.at ?? [0.5, 0.5]);
@@ -479,7 +487,7 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
 
   // scatters: seeded rejection sampling inside each region, land-only
   const rand = rng(0x5eedf00d);
-  for (const sc of (raw.scatters ?? []).slice(0, 24)) {
+  for (const sc of (raw.scatters ?? []).slice(0, 40)) {
     const def = getPrefab(sc.prefab ?? "");
     const region = mapPoly(sc.region);
     if (!def || region.length < 3) continue;
@@ -487,7 +495,7 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
     const zs = region.map((p) => p[1]);
     const bx0 = Math.min(...xs), bx1 = Math.max(...xs);
     const bz0 = Math.min(...zs), bz1 = Math.max(...zs);
-    const want = Math.round(clamp(sc.count, 1, 80, 12));
+    const want = Math.round(clamp(sc.count, 1, 220, 40));
     const tint = tintOf(sc.tint);
     const skin = skinOf(sc.skin);
     let placed = 0;
@@ -507,7 +515,7 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
 
   // markers
   let spawned = false;
-  for (const m of (raw.markers ?? []).slice(0, 160)) {
+  for (const m of (raw.markers ?? []).slice(0, 400)) {
     if (entities.length >= MAX_ENTITIES) break;
     const type = ["playerSpawn", "coin", "checkpoint", "enemy"].includes(m.type) ? m.type : "coin";
     if (type === "playerSpawn") {
@@ -517,10 +525,10 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
     const [x, z] = toXZ(m.at ?? [0.5, 0.5]);
     entities.push({ id: id("me"), type, pos: [x, groundAt(x, z) + 1, z] });
   }
-  for (const tr of (raw.coinTrails ?? []).slice(0, 12)) {
+  for (const tr of (raw.coinTrails ?? []).slice(0, 30)) {
     const line = mapPoly(tr.line);
     if (line.length < 2) continue;
-    const n = Math.round(clamp(tr.count, 3, 30, 8));
+    const n = Math.round(clamp(tr.count, 3, 80, 20));
     // total length → even spacing along the polyline
     const segLen: number[] = [];
     let total = 0;
@@ -568,7 +576,17 @@ export function compileMapPlan(raw: MapPlan): CompiledMap {
       size: [W, D],
       resolution: [cols, rows],
       heights,
-      palette: (THEMES[theme].palette ?? DEFAULT_PALETTE).map((s) => ({ h: s.h, color: [...s.color] as Vec3 })),
+      // The stock palettes put the snow line at ~30 m (small-stage scale).
+      // Journey-scale mountains reach 100+ m — stretch the elevation ramp to
+      // the world's actual height range so summits are snowcapped instead of
+      // whole ranges going white.
+      palette: (() => {
+        const k = Math.max(1, Math.min(4, maxH / 34));
+        return (THEMES[theme].palette ?? DEFAULT_PALETTE).map((s) => ({
+          h: Math.round(s.h * k * 10) / 10,
+          color: [...s.color] as Vec3,
+        }));
+      })(),
     },
     prefabs,
     entities,

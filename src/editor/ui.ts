@@ -280,7 +280,7 @@ export class EditorUI {
       const b = btn(cap(m), () => this.setBrush(m), "", bRow);
       this.brushBtns.set(m, b);
     }
-    slider("Radius", 2, 40, 1, ed.brush.radius, (v) => (ed.brush.radius = v), sc);
+    slider("Radius", 2, 200, 1, ed.brush.radius, (v) => (ed.brush.radius = v), sc);
     slider("Strength", 0.1, 3, 0.1, ed.brush.strength, (v) => (ed.brush.strength = v), sc);
     hint("Flatten levels toward the height you first clicked. Physics rebuilds when you release.", sc);
     heading("Geography", sc);
@@ -384,8 +384,8 @@ export class EditorUI {
     let sizeZ = t?.size[1] ?? 120;
     let cols = t?.resolution[0] ?? 41;
     let rows = t?.resolution[1] ?? 41;
-    numField("Size X (m)", sizeX, (v) => (sizeX = clampN(v, 20, 2000)), box, 10);
-    numField("Size Z (m)", sizeZ, (v) => (sizeZ = clampN(v, 20, 2000)), box, 10);
+    numField("Size X (m)", sizeX, (v) => (sizeX = clampN(v, 20, 3600)), box, 10);
+    numField("Size Z (m)", sizeZ, (v) => (sizeZ = clampN(v, 20, 3600)), box, 10);
     numField("Grid cols", cols, (v) => (cols = clampN(Math.round(v), 2, 257)), box, 8);
     numField("Grid rows", rows, (v) => (rows = clampN(Math.round(v), 2, 257)), box, 8);
     const tRow = row(box);

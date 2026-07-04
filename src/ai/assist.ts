@@ -391,13 +391,18 @@ export async function generateMapPlan(
       "or 'goal'/'finish' → the goal placement. 'Start'/'spawn'/a stick figure → playerSpawn.\n" +
       "- Choose theme from the drawing's mood/labels: day | sunset | night | alien | snow | " +
       "desert.\n\n" +
-      "SCALE: sizeX/sizeZ 200-550 m depending on how much is drawn (busy drawing → bigger). " +
-      "Plateau heights 4-10 m, big peaks 15-40 m. Keep slopes walkable: beach width ≥ 5.\n\n" +
+      "SCALE — THE WORLD IS A JOURNEY: sizeX/sizeZ 1800-3200 m (players run 7-14 m/s, so " +
+      "crossing the whole world on foot takes ~5 minutes — that is the intended feel). " +
+      "Every feature must scale with it or the world reads as a miniature: plateau heights " +
+      "6-14 m, big peaks 40-120 m, beach width 20-60 m, rivers 20-120 m wide (depth 6-30), " +
+      "ridges 25-140 m wide, walking paths 8-24 m wide. A forest is 80-200 trees; a village " +
+      "is 6-15 structures. Trace coordinates stay normalized 0..1 regardless of size.\n\n" +
       `GAMEPLAY SEASONING (always, even if not drawn): exactly one playerSpawn near the main ` +
-      `landmass's coast or the drawn start; a coinTrail (8-20 coins) along the main route; ` +
-      `2-4 checkpoints spread across the journey; a goal at the most distant/climactic ` +
-      `landmark; 2-6 enemies guarding interesting spots; a spring or boost where a jump or ` +
-      `gap begs for one. Gameplay prefabs: ${gameplayPrefabs}.\n\n` +
+      `landmass's coast or the drawn start; coinTrails (30-60 coins total) along the main ` +
+      `routes; 4-8 checkpoints spread across the journey; a goal at the most distant/climactic ` +
+      `landmark; 4-10 enemies guarding interesting spots; springs where climbs beg for them, ` +
+      `and boost pads spaced along the long legs of the journey so travel stays fast and fun. ` +
+      `Gameplay prefabs: ${gameplayPrefabs}.\n\n` +
       "The user may add guidance notes — honor them over your own reading where they " +
       "conflict. Finish with `notes`: 1-2 sentences on how you read the drawing.",
     messages: [
