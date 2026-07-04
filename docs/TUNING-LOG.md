@@ -40,14 +40,23 @@ going, and keep this file updated in the same commit as the change.
    the slam fires straight out of the touchdown (verified: slam −34 →
    land → jump). Leg cadence caps at 1.3× run speed so overspeed carry
    reads as a powerful stride, not a leg blur.
+7. **Wall-jump momentum reflection + speed camera.** Wall jumps kick away at
+   max(0.85× run speed, 0.8× approach speed) — walls redirect momentum
+   instead of eating it. The chase camera pulls back up to +22% with speed
+   above run speed (verified 12.3 → 15.0 at 31 m/s, settling back at rest);
+   run-through landings verified dip-free.
 
 ## Backlog (ordered by fluidity impact)
 
-6. **Landing→run polish.** Verify no speed dip on run-through landings;
-   stride phase continuity on touchdown.
-7. **Cancel matrix extension.** Largely covered by intent queueing (attack
-   buffered during a dash fires the frame the dash ends; J during a glide
-   fires the air attack immediately).
+1. **Playtest-driven pass.** The loop has covered the theory-driven items;
+   the next reorder should come from hands-on feedback (what still feels
+   stiff at 60 fps on a real device).
+2. **Wall coyote.** A ~0.1 s grace after leaving a wall where a wall jump
+   still fires (needs cheap continuous wall probing while airborne).
+3. **Soft target assist.** Nudge ground-attack facing toward the nearest
+   enemy within a small cone (PlaySession.nearestTarget exists).
+4. **Skid feedback at overspeed braking.** Dust/stretch cue when releasing
+   the stick above run speed.
 
 ## Verification harness notes
 

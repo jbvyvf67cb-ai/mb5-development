@@ -748,10 +748,12 @@ export class PlayerController {
           this.tryStart(wallSpec, -wall.nx, -wall.nz);
           this.facing = Math.atan2(wall.nx, wall.nz);
         } else {
-          // classic wall jump: kick away
+          // classic wall jump: kick away — and REFLECT approach speed, so a
+          // fast approach leaves fast (walls redirect momentum, not eat it)
+          const kick = Math.max(this.mv.runSpeed * 0.85, Math.hypot(vel.x, vel.z) * 0.8);
           vy = this.mv.jumpVelocity * 0.95;
-          vx = wall.nx * this.mv.runSpeed * 0.85;
-          vz = wall.nz * this.mv.runSpeed * 0.85;
+          vx = wall.nx * kick;
+          vz = wall.nz * kick;
           this.facing = Math.atan2(wall.nx, wall.nz);
           this.jumpRising = true;
           this.tryStart(wallSpec, wall.nx, wall.nz); // for the pose/anim only
