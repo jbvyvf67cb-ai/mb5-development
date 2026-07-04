@@ -576,7 +576,10 @@ export class PlayerController {
         vy = ph.vyHold;
       } else if (!this.grounded) {
         if (vy < 0) {
-          vy = Math.max(TERMINAL_VY, vy + FALL_GRAVITY_EXTRA * dt);
+          // apex float: ease into the heavy fall gravity so the top of the
+        // arc hangs a beat (an aiming window) instead of snapping downward
+        const gk = Math.min(1, 0.35 + (-vy / 3) * 0.65);
+        vy = Math.max(TERMINAL_VY, vy + FALL_GRAVITY_EXTRA * gk * dt);
           this.jumpRising = false;
         } else if (!input.jumpHeld && this.jumpRising) {
           vy += JUMPCUT_GRAVITY_EXTRA * dt;
@@ -682,7 +685,7 @@ export class PlayerController {
       vx = Math.sin(heading) * sp;
       vz = Math.cos(heading) * sp;
     } else {
-      const factor = mag < 0.1 ? 1.7 : reversing ? 1.5 : 1;
+      const factor = mag < 0.1 ? 1.7 : reversing ? 2.2 : 1; // reversals bite hard
       const accel = baseAccel * factor * dt;
       vx = vel.x + clamp(targetX - vel.x, -accel, accel);
       vz = vel.z + clamp(targetZ - vel.z, -accel, accel);
@@ -736,7 +739,9 @@ export class PlayerController {
     // have activated a jumpAir move; vy still reads pre-impulse here).
     const fallSpec = this.slotSpec("fallHold");
     const fallPh = fallSpec?.phases[0];
-    if (!this.active && fallSpec?.holdable && fallPh && !this.grounded && input.jumpHeld && vy < (fallPh.vyMin ?? -2) + 0.01) {
+    // catch the glide EARLY (vy < -1.2, not the full fall cap) so holding
+    // Space after a double jump / spin attack flows straight into it
+    if (!this.active && fallSpec?.holdable && fallPh && !this.grounded && input.jumpHeld && vy < -1.2) {
       this.gliding = true;
       this.earSpin = !!fallSpec.earSpin;
       vy = Math.max(vy, fallPh.vyMin ?? -2.4);
@@ -763,7 +768,10 @@ export class PlayerController {
       // asymmetric arc: heavy on the way down; releasing jump cuts the rise —
       // but only for rises the player jumped into (springs keep full height)
       if (vy < 0) {
-        vy = Math.max(TERMINAL_VY, vy + FALL_GRAVITY_EXTRA * dt);
+        // apex float: ease into the heavy fall gravity so the top of the
+        // arc hangs a beat (an aiming window) instead of snapping downward
+        const gk = Math.min(1, 0.35 + (-vy / 3) * 0.65);
+        vy = Math.max(TERMINAL_VY, vy + FALL_GRAVITY_EXTRA * gk * dt);
         this.jumpRising = false;
       } else if (!input.jumpHeld && this.jumpRising) {
         vy += JUMPCUT_GRAVITY_EXTRA * dt;

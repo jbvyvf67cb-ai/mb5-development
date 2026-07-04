@@ -21,16 +21,14 @@ going, and keep this file updated in the same commit as the change.
    gently (5 m/s² air, 12 m/s² ground) instead of braking at full accel.
    Verified: dash-jump launches at 31 m/s and lands at 22 across a full arc.
    Releasing the stick or reversing still brakes hard.
+3. **Apex float + reversal bite + early glide catch.** Fall-gravity extra
+   ramps in (35% at the apex → full by vy −3) so the top of the arc hangs an
+   aiming beat; reversal decel factor 1.5 → 2.2 (180s bite); fallHold moves
+   engage at vy < −1.2 instead of the full fall cap, so hold-Space after a
+   double jump / spin attack catches the glide almost immediately.
 
 ## Backlog (ordered by fluidity impact)
 
-3. **Apex float.** Soften the extra fall gravity in the |vy| < ~2 window so
-   jumps hang a beat at the top (better target adjustment, better feel).
-4. **Snappier reversals.** Raise the reversing decel factor so 180° turns
-   bite harder at speed.
-5. **Earlier glide catch + move→glide integration.** Engage fallHold moves
-   at vy < ~-1.2 instead of below the full vyMin, so holding Space after a
-   spin attack / double jump catches into the glide almost immediately.
 6. **Wider chain windows.** Combo chain press window from last 40% → last
    55% of the phase; verify punch1→2→3 lands reliably at 60 fps timing.
 7. **Landing→run polish.** Verify no speed dip on run-through landings;
