@@ -9,17 +9,17 @@ going, and keep this file updated in the same commit as the change.
 
 ## Done
 
-*(nothing yet — loop starting)*
+1. **Action buffering + cancel windows + intent queueing.** Dash/attack/
+   kick/power presses buffer 0.16 s (jump keeps 0.12 s); a press made DURING
+   a move becomes a queued intent (0.6 s) that survives to the cancel window.
+   Once a move's hit is out (struck) or it's past 60%, a buffered jump or
+   dash ends the recovery — kick→dash and kick→jump verified flowing;
+   slam phases stay committed. Buffered jumps also fire air moves on release
+   (double jump out of a spin attack).
 
 ## Backlog (ordered by fluidity impact)
 
-1. **Action buffering + cancel windows.** Buffer dash/attack/kick/power
-   presses ~0.16 s (like the jump buffer) so inputs just before a state
-   change still fire (press J right before landing → ground attack on
-   touchdown). Let a buffered jump or dash end a move's recovery once its
-   hit is out (struck) or it's past ~60% — actions chain instead of waiting
-   out full durations. Slam phases (until:"ground") stay committed.
-2. **Momentum carry above run speed.** Dash-jumps, boost pads, and boost
+1. **Momentum carry above run speed.** Dash-jumps, boost pads, and boost
    moves currently bleed excess speed at full accel rates (a boost pad's
    24 m/s dies in ~0.15 s of held W). When moving faster than run speed with
    input roughly aligned: steer the heading, bleed the excess slowly

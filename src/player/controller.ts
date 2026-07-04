@@ -22,6 +22,10 @@ import type { LevelPhysics } from "../world/schema";
 
 const COYOTE = 0.12;
 const JUMP_BUFFER = 0.12;
+// Action inputs (dash/attack/kick/power) buffer briefly too — a press just
+// before landing or just before a move ends still fires. Input leniency is
+// half of what "fluid" means.
+const MOVE_BUFFER = 0.16;
 // Game-feel: arcs are asymmetric — normal gravity up, heavy gravity down, and
 // releasing jump early cuts the rise. Snappy, Mario-style.
 const FALL_GRAVITY_EXTRA = -20; // added while falling
@@ -108,6 +112,10 @@ export class PlayerController {
 
   private coyote = 0;
   private buffer = 0;
+  private dashBuf = 0;
+  private atkBuf = 0;
+  private kickBuf = 0;
+  private powBuf = 0;
   private sinceGrounded = 0; // seconds since last solid ground contact
   private active: ActiveMove | null = null;
   private cooldowns: Record<string, number> = {};
@@ -363,7 +371,14 @@ export class PlayerController {
     // coyote/buffer tick every frame (freezing them inside one branch caused
     // phantom buffered jumps after dashes/pounds)
     this.coyote = this.grounded ? COYOTE : Math.max(0, this.coyote - dt);
-    this.buffer = input.jumpPressed ? JUMP_BUFFER : Math.max(0, this.buffer - dt);
+    // A press DURING a move is a queued intent — it must survive until the
+    // move's cancel window opens, not evaporate on the normal buffer clock.
+    const qb = this.active ? 0.6 : MOVE_BUFFER;
+    this.buffer = input.jumpPressed ? (this.active ? 0.6 : JUMP_BUFFER) : Math.max(0, this.buffer - dt);
+    this.dashBuf = input.dashPressed ? qb : Math.max(0, this.dashBuf - dt);
+    this.atkBuf = input.attackPressed ? qb : Math.max(0, this.atkBuf - dt);
+    this.kickBuf = input.kickPressed ? qb : Math.max(0, this.kickBuf - dt);
+    this.powBuf = input.poundPressed ? qb : Math.max(0, this.powBuf - dt);
     this.sinceGrounded = this.grounded ? 0 : this.sinceGrounded + dt;
 
     // ---------- move triggers ----------
@@ -385,6 +400,19 @@ export class PlayerController {
       }
     }
 
+    // Cancel windows: once a move's hit is out (struck) or it's ~60% done, a
+    // buffered jump or dash ends the recovery early — actions flow one into
+    // the next instead of waiting out full durations. Slam phases
+    // (until:"ground") stay committed until touchdown.
+    if (this.active) {
+      const c = this.active;
+      const cp = c.spec.phases[c.phase];
+      const done = c.struck || c.t / cp.dur > 0.6;
+      if (cp.until !== "ground" && done && (this.buffer > 0 || this.dashBuf > 0)) {
+        this.endActive();
+      }
+    }
+
     if (!this.active && this.clingT < 0) {
       // Slot context is NOT raw grounded — heavy characters' capsules jitter
       // (depenetration vy spikes read as airborne for a frame), and a J
@@ -395,17 +423,17 @@ export class PlayerController {
         this.grounded ||
         (nearGround && !this.jumpRising && vyNow < 5) ||
         (this.sinceGrounded < 0.25 && !this.jumpRising && this.vy < 3);
-      if (input.dashPressed) {
-        this.tryStart(this.slotSpec(onGround ? "dashGround" : "dashAir"), mdX, mdZ);
+      if (this.dashBuf > 0 && this.tryStart(this.slotSpec(onGround ? "dashGround" : "dashAir"), mdX, mdZ)) {
+        this.dashBuf = 0;
       }
-      if (!this.active && input.poundPressed) {
-        this.tryStart(this.slotSpec(onGround ? "powerGround" : "powerAir"), mdX, mdZ);
+      if (!this.active && this.powBuf > 0 && this.tryStart(this.slotSpec(onGround ? "powerGround" : "powerAir"), mdX, mdZ)) {
+        this.powBuf = 0;
       }
-      if (!this.active && input.attackPressed) {
-        this.tryStart(this.slotSpec(onGround ? "attackGround" : "attackAir"), mdX, mdZ);
+      if (!this.active && this.atkBuf > 0 && this.tryStart(this.slotSpec(onGround ? "attackGround" : "attackAir"), mdX, mdZ)) {
+        this.atkBuf = 0;
       }
-      if (!this.active && input.kickPressed) {
-        this.tryStart(this.slotSpec(onGround ? "kickGround" : "kickAir"), mdX, mdZ);
+      if (!this.active && this.kickBuf > 0 && this.tryStart(this.slotSpec(onGround ? "kickGround" : "kickAir"), mdX, mdZ)) {
+        this.kickBuf = 0;
       }
       // passives fire here, BEFORE steering decel eats the landing frame —
       // a roll that "keeps momentum" must grab the touchdown velocity.
@@ -649,7 +677,9 @@ export class PlayerController {
       this.buffer = 0;
       this.coyote = 0;
       this.jumpRising = true;
-    } else if (input.jumpPressed && !this.grounded) {
+    } else if ((input.jumpPressed || this.buffer > 0) && !this.grounded) {
+      // buffered too: a jump pressed during a move fires the moment the
+      // cancel window releases it (double jump out of a spin attack, etc.)
       const wallSpec = this.slotSpec("wall");
       const wall = wallSpec ? this.checkWall() : null;
       if (wallSpec && wall) {
