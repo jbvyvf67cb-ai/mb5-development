@@ -26,15 +26,23 @@ going, and keep this file updated in the same commit as the change.
    aiming beat; reversal decel factor 1.5 → 2.2 (180s bite); fallHold moves
    engage at vy < −1.2 instead of the full fall cap, so hold-Space after a
    double jump / spin attack catches the glide almost immediately.
+4. **Combo reliability + carry facing.** Chain window widened (last 75% of
+   the finishing phase); a buffered same-slot press now counts as chain
+   intent at phase end, so presses landing frame-exact on a transition
+   can't restart the combo — J-J-J = punchCombo→punch2→punch3 verified.
+   While carrying overspeed, the body faces the velocity heading (stick
+   leads, body follows) — no more high-speed moonwalk.
+5. **Juggle refresh.** onStrike returns hit count; a connected AIR hit
+   refreshes the whole air kit and pops the player up (vy ≥ 4.5) — homing
+   strike → hit → double jump → dive kick → hit → … strings flow.
 
 ## Backlog (ordered by fluidity impact)
 
-6. **Wider chain windows.** Combo chain press window from last 40% → last
-   55% of the phase; verify punch1→2→3 lands reliably at 60 fps timing.
-7. **Landing→run polish.** Verify no speed dip on run-through landings;
+6. **Landing→run polish.** Verify no speed dip on run-through landings;
    stride phase continuity on touchdown.
-8. **Cancel matrix extension.** Kick/attack cancels out of dashes
-   (dash → attack flows), spin-attack out of glide without releasing Space.
+7. **Cancel matrix extension.** Largely covered by intent queueing (attack
+   buffered during a dash fires the frame the dash ends; J during a glide
+   fires the air attack immediately).
 
 ## Verification harness notes
 

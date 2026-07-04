@@ -603,6 +603,7 @@ export class App {
       const hitPos = pos.add(new Vector3(dx * 1.2, 0.2, dz * 1.2));
       const hits = this.session?.applyStrike(pos, dx, dz, opts) ?? 0;
       this.effects?.burstAt(hitPos, 6 + hits * 8);
+      return hits; // air hits refresh the player's air kit (juggle strings)
     };
     this.player.onQueryTarget = (pos, maxDist) => this.session?.nearestTarget(pos, maxDist) ?? null;
     this.hud.setCharacter(character);

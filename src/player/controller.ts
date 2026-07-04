@@ -102,8 +102,11 @@ export class PlayerController {
   onShock?: (pos: Vector3) => void;
   /** Fired for particle bursts (count scales with the move). */
   onBurst?: (pos: Vector3, count: number) => void;
-  /** Fired at a strike window (dir = move/facing at the strike). */
-  onStrike?: (pos: Vector3, dirX: number, dirZ: number, opts: StrikeOpts) => void;
+  /** Fired at a strike window (dir = move/facing at the strike). Return the
+   * number of things hit — landing an AIR hit refreshes the air kit and pops
+   * the player up slightly, so strings juggle: homing strike → hit → double
+   * jump → dive kick → hit → … */
+  onStrike?: (pos: Vector3, dirX: number, dirZ: number, opts: StrikeOpts) => number | void;
   /** Homing moves ask for the nearest target (enemy/prop) within maxDist. */
   onQueryTarget?: (pos: Vector3, maxDist: number) => Vector3 | null;
 
@@ -324,6 +327,21 @@ export class PlayerController {
     this.homingTarget = null;
   }
 
+  private slotBuf(slot: SlotKey): number {
+    if (slot === "attackGround" || slot === "attackAir") return this.atkBuf;
+    if (slot === "kickGround" || slot === "kickAir") return this.kickBuf;
+    if (slot === "dashGround" || slot === "dashAir") return this.dashBuf;
+    if (slot === "powerGround" || slot === "powerAir") return this.powBuf;
+    return 0;
+  }
+
+  private clearSlotBuf(slot: SlotKey) {
+    if (slot === "attackGround" || slot === "attackAir") this.atkBuf = 0;
+    else if (slot === "kickGround" || slot === "kickAir") this.kickBuf = 0;
+    else if (slot === "dashGround" || slot === "dashAir") this.dashBuf = 0;
+    else if (slot === "powerGround" || slot === "powerAir") this.powBuf = 0;
+  }
+
   /** The direction a starting move should burst toward. */
   private moveDir(targetX: number, targetZ: number, mag: number): [number, number] {
     if (mag > 0.15) {
@@ -395,7 +413,9 @@ export class PlayerController {
         ((slot === "dashGround" || slot === "dashAir") && input.dashPressed) ||
         ((slot === "powerGround" || slot === "powerAir") && input.poundPressed);
       const ph = A.spec.phases[A.phase];
-      if (pressedAgain && A.phase === A.spec.phases.length - 1 && A.t / ph.dur > 0.4) {
+      // generous link window: the last ~75% of the finishing phase accepts
+      // the next combo press (tight windows read as dropped inputs)
+      if (pressedAgain && A.phase === A.spec.phases.length - 1 && A.t / ph.dur > 0.25) {
         A.chainQueued = true;
       }
     }
@@ -590,11 +610,16 @@ export class PlayerController {
       // strike window
       if (!act.struck && ph.strikeAt !== undefined && frac >= ph.strikeAt) {
         act.struck = true;
-        this.onStrike?.(this.position.clone(), act.dirX, act.dirZ, {
-          power: this.mv.strikePower * (ph.strikeMult ?? 1),
-          radius: ph.strikeRadius ?? 2.3,
-          arc: ph.strikeArc ?? 0.3,
-        });
+        const hits =
+          this.onStrike?.(this.position.clone(), act.dirX, act.dirZ, {
+            power: this.mv.strikePower * (ph.strikeMult ?? 1),
+            radius: ph.strikeRadius ?? 2.3,
+            arc: ph.strikeArc ?? 0.3,
+          }) ?? 0;
+        if (hits > 0 && !this.grounded) {
+          this.airUses = {}; // a connected air hit refreshes the air kit
+          if (vy < 4.5) vy = 4.5; // and pops you up — juggle strings flow
+        }
       }
 
       this.trailActive = !!ph.trail;
@@ -649,7 +674,10 @@ export class PlayerController {
           act.t = 0;
           act.started = false;
           act.struck = false;
-        } else if (act.chainQueued && spec.chain) {
+        } else if (spec.chain && (act.chainQueued || this.slotBuf(spec.slot) > 0)) {
+          // a buffered same-slot press is chain intent too — presses that
+          // land frame-exact on a transition must not restart the combo
+          this.clearSlotBuf(spec.slot);
           const next = getMove(spec.chain);
           this.endActive();
           if (next) this.tryStart(next, mdX, mdZ);
@@ -684,6 +712,7 @@ export class PlayerController {
       );
       vx = Math.sin(heading) * sp;
       vz = Math.cos(heading) * sp;
+      this.facing = heading; // face where you're GOING — the stick leads, the body follows
     } else {
       const factor = mag < 0.1 ? 1.7 : reversing ? 2.2 : 1; // reversals bite hard
       const accel = baseAccel * factor * dt;
